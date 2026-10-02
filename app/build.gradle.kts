@@ -12,8 +12,8 @@ android {
         applicationId = "com.example.neuraauto"
         minSdk = 26
         targetSdk = 35
-        versionCode = 11
-        versionName = "4.1.0-step2-100k-brain"
+        versionCode = 12
+        versionName = "4.2.0-step3-self-healing"
     }
 
     buildTypes {

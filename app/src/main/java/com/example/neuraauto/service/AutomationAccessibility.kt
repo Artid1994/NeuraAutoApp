@@ -9,6 +9,7 @@ import android.net.NetworkCapabilities
 import android.net.wifi.WifiManager
 import android.os.BatteryManager
 import android.os.Bundle
+import android.os.SystemClock
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
@@ -45,6 +46,18 @@ class AutomationAccessibility : AccessibilityService() {
         private const val LINE_PACKAGE = "com.linecorp.line"
         private const val SYSTEM_UI_PACKAGE = "com.android.systemui"
         private const val MAX_ACTION_ATTEMPTS = 10
+
+        /** Self-healing: retries allowed per step before the action is dropped. */
+        private const val MAX_STEP_RETRIES = 5
+
+        /** Self-healing: popups cleared before giving up on the target UI. */
+        private const val MAX_POPUP_DISMISSALS = 3
+
+        /** Self-healing: base delay between retries (adapts: 2s, 4s, 6s …). */
+        private const val STEP_DELAY_BASE_MS = 2_000L
+
+        /** Self-healing: ceiling on the adaptive delay. */
+        private const val MAX_STEP_DELAY_MS = 8_000L
     }
 
     private val dao by lazy { AppDatabase.getInstance(applicationContext).userActivityDao() }
@@ -58,6 +71,15 @@ class AutomationAccessibility : AccessibilityService() {
 
     /** Position within [AutomationAction.steps] for a multi-step flow. */
     private var stepCursor = 0
+
+    /** Self-healing state: retries spent on the current step. */
+    private var stepRetries = 0
+
+    /** Self-healing state: popups dismissed during this action. */
+    private var popupsDismissed = 0
+
+    /** Self-healing state: earliest elapsed-realtime the next step may run. */
+    private var nextStepAllowedAt = 0L
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -155,6 +177,23 @@ class AutomationAccessibility : AccessibilityService() {
             return
         }
 
+        // ── self-healing gate 1: respect the adaptive delay ────────────────
+        // After a failed attempt the next one waits; without this the engine
+        // would hammer the same unready node on every window event.
+        val now = SystemClock.elapsedRealtime()
+        if (now < nextStepAllowedAt) {
+            Log.d(TAG, "Step ${action.steps[stepCursor]} waiting ${nextStepAllowedAt - now} ms")
+            return
+        }
+
+        // ── self-healing gate 2: clear a blocking popup first ──────────────
+        // A permission prompt or nag dialog overlays the screen and hides the
+        // node we want, so every retry fails until it is gone.
+        if (dismissBlockingPopup(rootNode)) {
+            scheduleNextAttempt(now)
+            return
+        }
+
         val kind = action.steps[stepCursor]
         val performed = when (kind) {
             ActionStepKind.TYPE_TEXT.name -> setTextOnInput(action, rootNode)
@@ -173,11 +212,24 @@ class AutomationAccessibility : AccessibilityService() {
         }
 
         if (!performed) {
-            Log.d(TAG, "Step $kind not ready yet; will retry on next window event")
+            // ── self-healing gate 3: retry with an adapting delay ──────────
+            stepRetries++
+            if (stepRetries > MAX_STEP_RETRIES) {
+                Log.w(
+                    TAG,
+                    "Step $kind failed $stepRetries times; abandoning " +
+                        "workflow ${action.workflowId}"
+                )
+                clearPendingAction()
+                return
+            }
+            Log.d(TAG, "Step $kind not ready (retry $stepRetries/$MAX_STEP_RETRIES)")
+            scheduleNextAttempt(now)
             return
         }
 
         stepCursor++
+        stepRetries = 0
         Log.d(TAG, "Step $kind done (${stepCursor}/${action.steps.size})")
 
         if (stepCursor >= action.steps.size) {
@@ -188,6 +240,49 @@ class AutomationAccessibility : AccessibilityService() {
             )
             finishAction()
         }
+    }
+
+    /**
+     * Try to clear a popup that is covering the target UI.
+     *
+     * Order: tap a labelled dismiss button, then fall back to a back press if
+     * the hierarchy looks like a dialog but offers no button we recognise.
+     * Bounded by [MAX_POPUP_DISMISSALS] so a dialog that reappears on every
+     * window event cannot trap the engine in a loop.
+     *
+     * @return true when a popup was handled and the caller should retry.
+     */
+    private fun dismissBlockingPopup(rootNode: AccessibilityNodeInfo): Boolean {
+        if (popupsDismissed >= MAX_POPUP_DISMISSALS) return false
+
+        val dismissButton = SmartNodeFinder.findByIntent(
+            rootNode,
+            SmartNodeFinder.DISMISS_INTENTS
+        )
+        if (dismissButton != null) {
+            val clicked = dismissButton.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+            if (clicked) {
+                popupsDismissed++
+                Log.i(TAG, "Dismissed popup via button ($popupsDismissed)")
+                return true
+            }
+        }
+
+        if (SmartNodeFinder.looksLikeDialog(rootNode)) {
+            performGlobalAction(GLOBAL_ACTION_BACK)
+            popupsDismissed++
+            Log.i(TAG, "Dismissed popup via BACK ($popupsDismissed)")
+            return true
+        }
+
+        return false
+    }
+
+    /** Exponential backoff: 2s, 4s, 6s … capped at [MAX_STEP_DELAY_MS]. */
+    private fun scheduleNextAttempt(now: Long) {
+        val delay = (STEP_DELAY_BASE_MS * stepRetries.coerceAtLeast(1))
+            .coerceAtMost(MAX_STEP_DELAY_MS)
+        nextStepAllowedAt = now + delay
     }
 
     /** Inject the message into the target app's input field. */
@@ -309,6 +404,9 @@ class AutomationAccessibility : AccessibilityService() {
         pendingAction = null
         actionAttempts = 0
         stepCursor = 0
+        stepRetries = 0
+        popupsDismissed = 0
+        nextStepAllowedAt = 0L
     }
 
     // ── Phase 3.1: in-app interaction capture ────────────────────────────────

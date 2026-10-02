@@ -40,6 +40,56 @@ object SmartNodeFinder {
         "ค้นหา", "search"
     )
 
+    /**
+     * Words that indicate a dialog button which clears the way — permission
+     * prompts, "rate us" nag screens, onboarding tooltips, update notices.
+     *
+     * Deliberately excludes destructive confirmations ("ลบ", "Delete") so the
+     * self-healing pass never taps through something irreversible.
+     */
+    val DISMISS_INTENTS = listOf(
+        // Thai
+        "ตกลง", "อนุญาต", "ยอมรับ", "ปิด", "ข้าม", "ไว้ทีหลัง",
+        "ไม่ใช่ตอนนี้", "ไม่ขอบคุณ", "เข้าใจแล้ว", "เริ่มใช้งาน",
+        // English
+        "ok", "allow", "accept", "close", "skip", "later",
+        "not now", "no thanks", "got it", "continue", "dismiss",
+        "cancel", "deny"
+    )
+
+    /** Class-name fragments that mark a node as a dialog/popup container. */
+    private val DIALOG_CLASS_HINTS = listOf("dialog", "popupwindow", "alert")
+
+    /**
+     * True when the hierarchy contains a dialog/popup container.
+     *
+     * Used as the trigger for the self-healing BACK fallback: a dialog with no
+     * labelled button can still be closed with a back press, but pressing back
+     * on a normal screen would navigate the user away, so the check matters.
+     */
+    fun looksLikeDialog(rootNode: AccessibilityNodeInfo): Boolean {
+        var found = false
+        walk(rootNode) { node ->
+            val className = node.className?.toString()?.lowercase() ?: return@walk
+            if (DIALOG_CLASS_HINTS.any { className.contains(it) }) {
+                found = true
+                false // stop
+            } else {
+                true
+            }
+        }
+        return found
+    }
+
+    /** Depth-first walk; [visit] returns false to stop early. */
+    private fun walk(node: AccessibilityNodeInfo, visit: (AccessibilityNodeInfo) -> Boolean) {
+        if (!visit(node)) return
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            walk(child, visit)
+        }
+    }
+
     // ── Public API ──────────────────────────────────────────────────────────
 
     /**
