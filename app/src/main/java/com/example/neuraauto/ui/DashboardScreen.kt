@@ -1,23 +1,30 @@
 package com.example.neuraauto.ui
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.core.graphics.drawable.toBitmap
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.neuraauto.BuildConfig
 import com.example.neuraauto.brain.ActionSequencePattern
-import com.example.neuraauto.brain.ActionStepBuilder
 import com.example.neuraauto.brain.RoutinePattern
+import com.example.neuraauto.data.AutomationSettings
 import com.example.neuraauto.data.AutomationWorkflow
+import com.example.neuraauto.data.WorkflowRepository
 
 /**
  * Shown in the header so a build's phase is obvious at a glance.
@@ -26,11 +33,166 @@ import com.example.neuraauto.data.AutomationWorkflow
  * leave the badge stale.
  */
 val APP_VERSION_LABEL: String =
-    "NeuraAuto AI v${BuildConfig.VERSION_NAME} (Phase 3.1: Sequence Collector)"
+    "NeuraAuto AI v${BuildConfig.VERSION_NAME} (Phase 3.2: Autonomous AI)"
+
+/** 28dp app icon, or a lettered placeholder when the app cannot be resolved. */
+@Composable
+private fun AppIcon(packageName: String, size: Int = 28) {
+    val context = LocalContext.current
+    val resolver = remember(context) { AppInfoResolver(context) }
+    val drawable = remember(packageName) { resolver.iconFor(packageName) }
+
+    if (drawable != null) {
+        val bitmap = remember(packageName) {
+            // Rasterising once per package keeps recomposition cheap.
+            runCatching { drawable.toBitmap(size, size).asImageBitmap() }.getOrNull()
+        }
+        if (bitmap != null) {
+            Image(
+                bitmap = bitmap,
+                contentDescription = resolver.labelFor(packageName),
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.size(size.dp)
+            )
+            return
+        }
+    }
+
+    // Uninstalled or hidden package: show the first letter rather than a gap.
+    Surface(
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        shape = MaterialTheme.shapes.extraSmall,
+        modifier = Modifier.size(size.dp)
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Text(
+                text = resolver.labelFor(packageName).take(1).uppercase(),
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Bold
+            )
+        }
+    }
+}
+
+/** Icon + human-readable name, used everywhere a package is shown. */
+@Composable
+private fun AppIdentity(packageName: String, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    val resolver = remember(context) { AppInfoResolver(context) }
+    val label = remember(packageName) { resolver.labelFor(packageName) }
+    val installed = remember(packageName) { resolver.isInstalled(packageName) }
+
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        AppIcon(packageName)
+        Column {
+            Text(text = label, fontWeight = FontWeight.SemiBold)
+            Text(
+                text = if (installed) packageName else "$packageName (ไม่ได้ติดตั้ง)",
+                style = MaterialTheme.typography.labelSmall,
+                color = Color.Gray
+            )
+        }
+    }
+}
+
+@Composable
+private fun AutonomousAiCard(
+    state: DashboardUiState,
+    onToggleAutoEnable: (Boolean) -> Unit,
+    onRunTrainingNow: () -> Unit
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = "🤖 Autonomous AI (Phase 3.2)",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "ระบบเรียนรู้และตั้งเวลาอัตโนมัติให้เองทุกวัน " +
+                    "โดยไม่ต้องกดปุ่ม (เมื่อมั่นใจเกิน 80%)",
+                style = MaterialTheme.typography.bodySmall
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("เปิดใช้งานอัตโนมัติ", fontWeight = FontWeight.SemiBold)
+                    Text(
+                        text = if (state.autoEnableEnabled) {
+                            "ทำงานเบื้องหลัง — อาจส่งข้อความโดยไม่มีคนเฝ้า"
+                        } else {
+                            "ปิดอยู่ — ระบบจะแนะนำแต่ไม่ตั้งเวลาให้เอง"
+                        },
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+                Switch(
+                    checked = state.autoEnableEnabled,
+                    onCheckedChange = onToggleAutoEnable
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+            val run = state.lastTrainingRun
+            if (run.hasRun) {
+                HorizontalDivider()
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "รอบล่าสุด: ${formatTimestamp(run.timestampMillis)}",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Text(
+                    text = "พบรูปแบบ ${run.patternsFound} รายการ • " +
+                        "ตั้งเวลาให้อัตโนมัติ ${run.autoEnabled} รายการ",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Text(
+                    text = "คะแนนจากโมเดล (mean activation): " +
+                        "%.4f".format(run.meanScore),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.Gray
+                )
+            } else {
+                Text(
+                    text = "ยังไม่เคยรัน — จะเริ่มหลังเครื่องชาร์จและต่อ Wi-Fi",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+            OutlinedButton(
+                onClick = onRunTrainingNow,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("ฝึกโมเดลเดี๋ยวนี้ (Run Training Now)")
+            }
+        }
+    }
+}
+
+/** Minimal local formatter; avoids pulling in a date library for one label. */
+private fun formatTimestamp(millis: Long): String {
+    val calendar = java.util.Calendar.getInstance().apply { timeInMillis = millis }
+    val day = calendar.get(java.util.Calendar.DAY_OF_MONTH)
+    val month = calendar.get(java.util.Calendar.MONTH) + 1
+    val hour = calendar.get(java.util.Calendar.HOUR_OF_DAY)
+    val minute = calendar.get(java.util.Calendar.MINUTE)
+    return "%02d/%02d %02d:%02d น.".format(day, month, hour, minute)
+}
 
 @Composable
 fun DashboardScreen(
     onOpenAccessibilitySettings: () -> Unit,
+    onRefreshTrainingSummary: () -> Unit = {},
     viewModel: DashboardViewModel = viewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -62,6 +224,15 @@ fun DashboardScreen(
             onAnalyze = viewModel::analyze,
             onEnable = viewModel::enableWorkflow,
             onDisable = viewModel::disableWorkflow
+        )
+
+        AutonomousAiCard(
+            state = state,
+            onToggleAutoEnable = viewModel::setAutoEnableEnabled,
+            onRunTrainingNow = {
+                viewModel.runTrainingNow()
+                onRefreshTrainingSummary()
+            }
         )
 
         LearnedWorkflowCard(
@@ -204,9 +375,10 @@ private fun RoutineRow(
     onDisable: (AutomationWorkflow) -> Unit
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
+        AppIdentity(packageName = routine.packageName)
         Text(
-            text = "${routine.packageName} • ${"%02d".format(routine.hourOfDay)}:00 น.",
-            fontWeight = FontWeight.SemiBold
+            text = "เวลา ${"%02d".format(routine.hourOfDay)}:00 น.",
+            style = MaterialTheme.typography.bodySmall
         )
         Text(
             text = "ความมั่นใจ ${routine.confidencePercent}% " +
@@ -296,10 +468,10 @@ private fun SequenceRow(
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
+            AppIdentity(packageName = pattern.packageName)
             Text(
-                text = "${ActionStepBuilder.appLabel(pattern.packageName)} • " +
-                    "${"%02d".format(pattern.hourOfDay)}:00 น.",
-                fontWeight = FontWeight.SemiBold
+                text = "เวลา ${"%02d".format(pattern.hourOfDay)}:00 น.",
+                style = MaterialTheme.typography.bodySmall
             )
             Text(
                 text = "ความมั่นใจ ${pattern.confidencePercent}% " +
@@ -414,10 +586,8 @@ private fun WorkflowRow(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = workflow.targetApp,
-                    fontWeight = FontWeight.SemiBold
-                )
+                AppIdentity(packageName = workflow.targetApp)
+                Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = "ทุกวัน ${"%02d".format(workflow.scheduledHour)}:" +
                         "%02d".format(workflow.scheduledMinute) + " น.",
@@ -432,7 +602,7 @@ private fun WorkflowRow(
 
         Spacer(modifier = Modifier.height(4.dp))
         Text(
-            text = "ข้อความ: ${workflow.targetMessage}",
+            text = "ข้อความ: ${WorkflowRepository.messageOf(workflow)}",
             style = MaterialTheme.typography.bodySmall,
             color = Color.Gray
         )

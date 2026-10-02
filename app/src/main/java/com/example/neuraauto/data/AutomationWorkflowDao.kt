@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -34,6 +35,16 @@ interface AutomationWorkflowDao {
 
     @Query("UPDATE automation_workflow SET isActive = :active WHERE id = :id")
     suspend fun setActive(id: Long, active: Boolean)
+
+    /**
+     * Update in place, preserving the row id.
+     *
+     * Preferred over [upsert] when the slot already exists: `REPLACE` is a
+     * DELETE+INSERT that mints a new id, which would orphan the alarm whose
+     * PendingIntent request code is derived from the id.
+     */
+    @Update
+    suspend fun update(workflow: AutomationWorkflow)
 
     @Query("DELETE FROM automation_workflow WHERE id = :id")
     suspend fun delete(id: Long)

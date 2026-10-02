@@ -10,11 +10,14 @@ import com.example.neuraauto.brain.BrainAnalysis
 import com.example.neuraauto.brain.NeuralBrainEngine
 import com.example.neuraauto.brain.SequenceAnalysis
 import com.example.neuraauto.data.AppDatabase
+import com.example.neuraauto.data.AutomationSettings
 import com.example.neuraauto.data.AutomationWorkflow
+import com.example.neuraauto.data.WorkflowRepository
 import com.example.neuraauto.service.AutomationAction
 import com.example.neuraauto.service.LaunchOutcome
 import com.example.neuraauto.service.WorkflowRunner
 import com.example.neuraauto.service.WorkflowScheduler
+import com.example.neuraauto.worker.TrainingScheduler
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -31,6 +34,11 @@ data class DashboardUiState(
     val sequences: List<SequenceAnalysis> = emptyList(),
     val isAnalyzing: Boolean = false,
     val workflows: List<AutomationWorkflow> = emptyList(),
+    /** Whether background training may enable workflows on its own. */
+    val autoEnableEnabled: Boolean = true,
+    /** Summary of the last background training pass (Phase 3.2). */
+    val lastTrainingRun: AutomationSettings.TrainingRunSummary =
+        AutomationSettings.TrainingRunSummary(0L, 0, 0, 0f),
     /** Transient feedback from "Test Trigger Now". */
     val testResult: String? = null
 ) {
@@ -56,6 +64,12 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     val uiState: StateFlow<DashboardUiState> = _uiState.asStateFlow()
 
     init {
+        // Settings are not reactive, so they are read once per ViewModel.
+        _uiState.value = _uiState.value.copy(
+            autoEnableEnabled = AutomationSettings.isAutoEnableEnabled(application),
+            lastTrainingRun = AutomationSettings.lastTrainingRun(application)
+        )
+
         // Live count so the card reflects newly captured events without a reload.
         viewModelScope.launch {
             activityDao.observeLogCount().collect { count ->
@@ -74,6 +88,26 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 _uiState.value = _uiState.value.copy(actionCount = count)
             }
         }
+    }
+
+    /** Queue an immediate training pass (same worker the nightly job uses). */
+    fun runTrainingNow() {
+        TrainingScheduler.runTrainingNow(getApplication())
+        Log.i(TAG, "Queued an immediate training pass")
+    }
+
+    /** Turn background auto-enable on or off. */
+    fun setAutoEnableEnabled(enabled: Boolean) {
+        AutomationSettings.setAutoEnableEnabled(getApplication(), enabled)
+        _uiState.value = _uiState.value.copy(autoEnableEnabled = enabled)
+        Log.i(TAG, "Background auto-enable set to $enabled")
+    }
+
+    /** Re-read the last training summary (e.g. after returning to the screen). */
+    fun refreshTrainingSummary() {
+        _uiState.value = _uiState.value.copy(
+            lastTrainingRun = AutomationSettings.lastTrainingRun(getApplication())
+        )
     }
 
     /** Run routine detection over the most recent activity rows. */
@@ -119,14 +153,13 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                     targetMessage = defaultMessageFor(packageName),
                     isActive = true
                 )
-                // REPLACE on the (targetApp, hour, minute) slot keeps the row id
-                // stable for an already-enabled routine, so its alarm slot is reused.
-                val id = workflowDao.upsert(workflow)
-                val stored = workflowDao.byId(id) ?: workflow.copy(id = id)
+                // save() keeps an existing row's id, so the alarm slot (keyed on
+                // the id) is reused instead of orphaned.
+                val stored = WorkflowRepository.save(workflowDao, workflow)
                 withContext(Dispatchers.IO) {
                     WorkflowScheduler.schedule(getApplication(), stored)
                 }
-                Log.i(TAG, "Enabled workflow $id for $packageName at $hourOfDay:00")
+                Log.i(TAG, "Enabled workflow ${stored.id} for $packageName at $hourOfDay:00")
             } catch (e: Exception) {
                 Log.w(TAG, "Failed to enable workflow for $packageName", e)
             }
@@ -152,17 +185,19 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                     targetApp = pattern.packageName,
                     scheduledHour = pattern.hourOfDay,
                     scheduledMinute = 0,
-                    targetMessage = typed ?: defaultMessageFor(pattern.packageName),
+                    targetMessage = WorkflowRepository.encodeMessage(
+                        message = typed ?: defaultMessageFor(pattern.packageName),
+                        steps = pattern.steps.map { it.kind.name }
+                    ),
                     isActive = true
                 )
-                val id = workflowDao.upsert(workflow)
-                val stored = workflowDao.byId(id) ?: workflow.copy(id = id)
+                val stored = WorkflowRepository.save(workflowDao, workflow)
                 withContext(Dispatchers.IO) {
                     WorkflowScheduler.schedule(getApplication(), stored)
                 }
                 Log.i(
                     TAG,
-                    "Enabled sequence workflow $id for ${pattern.packageName} " +
+                    "Enabled sequence workflow ${stored.id} for ${pattern.packageName} " +
                         "(${pattern.steps.size} steps) at ${pattern.hourOfDay}:00"
                 )
             } catch (e: Exception) {
@@ -212,7 +247,8 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 workflowId = workflow.id,
                 targetPackage = workflow.targetApp,
                 actionType = AutomationAction.ACTION_SEND_MESSAGE,
-                message = workflow.targetMessage
+                message = WorkflowRepository.messageOf(workflow),
+                steps = WorkflowRepository.stepsFor(workflow)
             )
             val outcome = try {
                 withContext(Dispatchers.Main) {

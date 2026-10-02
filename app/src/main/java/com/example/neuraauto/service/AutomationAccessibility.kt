@@ -10,6 +10,7 @@ import android.os.Bundle
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import com.example.neuraauto.brain.ActionStepKind
 import com.example.neuraauto.data.ActionSequenceTracker
 import com.example.neuraauto.data.ActivityRecorder
 import com.example.neuraauto.data.AppDatabase
@@ -50,6 +51,9 @@ class AutomationAccessibility : AccessibilityService() {
 
     /** How many window events an action may consume before it is abandoned. */
     private var actionAttempts = 0
+
+    /** Position within [AutomationAction.steps] for a multi-step flow. */
+    private var stepCursor = 0
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -113,43 +117,120 @@ class AutomationAccessibility : AccessibilityService() {
     }
 
     /**
-     * Inject [AutomationAction.message] into the target app's input field and
-     * click send. Only clears the pending action once the send button has
-     * actually been activated.
+     * Execute the queued action: either the learned multi-step flow or the
+     * legacy open-app / type / send path.
      */
     private fun performSendMessage(action: AutomationAction) {
         val rootNode = rootInActiveWindow ?: return
 
-        val inputNodes = findInputNodes(rootNode, action.targetPackage)
-        if (inputNodes.isEmpty()) return
+        if (action.steps.isNotEmpty()) {
+            performSteps(action, rootNode)
+            return
+        }
 
-        val inputNode = inputNodes.first()
+        val textSet = setTextOnInput(action, rootNode)
+        if (!textSet) return
+
+        val clicked = clickSend(action, rootNode)
+        if (clicked) {
+            Log.i(TAG, "Executed workflow ${action.workflowId} for ${action.targetPackage}")
+            finishAction()
+        }
+    }
+
+    /**
+     * Walk the learned step list in order.
+     *
+     * The cursor advances only after a step has actually been performed, so a
+     * step whose node has not appeared yet is retried on the next window event
+     * (bounded by [MAX_ACTION_ATTEMPTS]) rather than being skipped or repeated.
+     */
+    private fun performSteps(action: AutomationAction, rootNode: AccessibilityNodeInfo) {
+        if (stepCursor >= action.steps.size) {
+            finishAction()
+            return
+        }
+
+        val kind = action.steps[stepCursor]
+        val performed = when (kind) {
+            ActionStepKind.TYPE_TEXT.name -> setTextOnInput(action, rootNode)
+
+            ActionStepKind.CLICK_SEND.name -> clickSend(action, rootNode)
+
+            // Locating the input field is folded into the TYPE_TEXT step, and
+            // opening the app already happened in WorkflowRunner.
+            ActionStepKind.CLICK_INPUT.name,
+            ActionStepKind.OPEN_APP.name -> true
+
+            else -> {
+                Log.w(TAG, "Unknown step '$kind'; skipping")
+                true
+            }
+        }
+
+        if (!performed) {
+            Log.d(TAG, "Step $kind not ready yet; will retry on next window event")
+            return
+        }
+
+        stepCursor++
+        Log.d(TAG, "Step $kind done (${stepCursor}/${action.steps.size})")
+
+        if (stepCursor >= action.steps.size) {
+            Log.i(
+                TAG,
+                "Executed ${action.steps.size}-step workflow ${action.workflowId} " +
+                    "for ${action.targetPackage}"
+            )
+            finishAction()
+        }
+    }
+
+    /** Inject the message into the target app's input field. */
+    private fun setTextOnInput(
+        action: AutomationAction,
+        rootNode: AccessibilityNodeInfo
+    ): Boolean {
+        val inputNodes = findInputNodes(rootNode, action.targetPackage)
+        if (inputNodes.isEmpty()) return false
+
         val args = Bundle().apply {
             putCharSequence(
                 AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
                 action.message
             )
         }
-        val textSet = inputNode.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+        val textSet = inputNodes.first().performAction(
+            AccessibilityNodeInfo.ACTION_SET_TEXT,
+            args
+        )
         if (!textSet) {
             Log.w(TAG, "ACTION_SET_TEXT rejected for ${action.targetPackage}")
-            return
         }
+        return textSet
+    }
 
+    /** Activate the send button. */
+    private fun clickSend(
+        action: AutomationAction,
+        rootNode: AccessibilityNodeInfo
+    ): Boolean {
         val sendButton = findSendButton(rootNode, action.targetPackage)
         if (sendButton == null) {
-            Log.d(TAG, "Send button not found yet; will retry on next window event")
-            return
+            Log.d(TAG, "Send button not found yet for ${action.targetPackage}")
+            return false
         }
-
         val clicked = sendButton.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-        if (clicked) {
-            Log.i(TAG, "Executed workflow ${action.workflowId} for ${action.targetPackage}")
-            clearPendingAction()
-            performGlobalAction(GLOBAL_ACTION_HOME)
-        } else {
+        if (!clicked) {
             Log.w(TAG, "Send button click rejected for ${action.targetPackage}")
         }
+        return clicked
+    }
+
+    /** The workflow finished; return the user to where they were. */
+    private fun finishAction() {
+        clearPendingAction()
+        performGlobalAction(GLOBAL_ACTION_HOME)
     }
 
     /**
@@ -207,6 +288,7 @@ class AutomationAccessibility : AccessibilityService() {
     private fun clearPendingAction() {
         pendingAction = null
         actionAttempts = 0
+        stepCursor = 0
     }
 
     // ── Phase 3.1: in-app interaction capture ────────────────────────────────

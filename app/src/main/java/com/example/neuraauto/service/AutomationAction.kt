@@ -15,6 +15,12 @@ data class AutomationAction(
     val targetPackage: String,
     val actionType: String,
     val message: String,
+    /**
+     * Steps to perform after the app opens, as
+     * `com.example.neuraauto.brain.ActionStepKind` names. Empty means the
+     * legacy single-step behaviour (open app, type, click send).
+     */
+    val steps: List<String> = emptyList(),
     /** Elapsed-realtime stamp (survives clock changes) of when the alarm fired. */
     val createdAtElapsedRealtime: Long = SystemClock.elapsedRealtime()
 ) {
@@ -33,6 +39,7 @@ data class AutomationAction(
         putExtra(EXTRA_TARGET_PACKAGE, targetPackage)
         putExtra(EXTRA_ACTION_TYPE, actionType)
         putExtra(EXTRA_MESSAGE, message)
+        putExtra(EXTRA_STEPS, steps.toTypedArray())
         // Elapsed-realtime is not comparable across reboots, so the receiver
         // re-stamps it; only the in-process handoff relies on this value.
         putExtra(EXTRA_CREATED_ELAPSED, createdAtElapsedRealtime)
@@ -48,6 +55,7 @@ data class AutomationAction(
         const val EXTRA_TARGET_PACKAGE = "extra_target_package"
         const val EXTRA_ACTION_TYPE = "extra_action_type"
         const val EXTRA_MESSAGE = "extra_message"
+        const val EXTRA_STEPS = "extra_steps"
         const val EXTRA_CREATED_ELAPSED = "extra_created_elapsed"
 
         /**
@@ -66,6 +74,7 @@ data class AutomationAction(
                 targetPackage = targetPackage,
                 actionType = actionType,
                 message = message,
+                steps = current.getStringArrayExtra(EXTRA_STEPS)?.toList() ?: emptyList(),
                 createdAtElapsedRealtime = SystemClock.elapsedRealtime()
             )
         }

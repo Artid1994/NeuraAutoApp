@@ -7,6 +7,7 @@ import android.content.Intent
 import android.os.Build
 import android.util.Log
 import com.example.neuraauto.data.AutomationWorkflow
+import com.example.neuraauto.data.WorkflowRepository
 import java.util.Calendar
 
 /**
@@ -103,7 +104,8 @@ object WorkflowScheduler {
                 workflowId = workflow.id,
                 targetPackage = workflow.targetApp,
                 actionType = AutomationAction.ACTION_SEND_MESSAGE,
-                message = workflow.targetMessage
+                message = WorkflowRepository.messageOf(workflow),
+                steps = WorkflowRepository.stepsFor(workflow)
             ).writeTo(this)
         }
         return PendingIntent.getBroadcast(
