@@ -30,26 +30,31 @@ class AutomationAccessibility : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         val currentEvent = event ?: return
 
+        // Phase 2 data collection — independent of any pending automation task,
+        // so it runs before the early returns below.
         if (currentEvent.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
             captureForegroundChange(currentEvent)
         }
 
+        // Automation only runs when a task is actually queued; skipping the
+        // root-node lookup otherwise keeps this callback cheap.
+        if (pendingTaskAction != "SEND_LINE_MSG") return
+
         val rootNode = rootInActiveWindow ?: return
-        if (pendingTaskAction == "SEND_LINE_MSG") {
-            executeLineWorkflow(rootNode)
-        }
+        executeLineWorkflow(rootNode)
     }
 
     /**
-     * Phase 2 data collection: log which app the user moved to, together with
-     * the ambient conditions at that moment. Written off the main thread by
-     * [ActivityRecorder]; failures are swallowed there so the service survives.
+     * Log which app the user moved to, together with the ambient conditions at
+     * that moment. Written off the main thread by [ActivityRecorder]; failures
+     * are swallowed there so the service survives.
      */
     private fun captureForegroundChange(event: AccessibilityEvent) {
         val packageName = event.packageName?.toString() ?: return
         // Ignore our own UI and system chrome — only third-party app switches
         // are interesting for routine detection.
         if (packageName == applicationContext.packageName) return
+        if (packageName == "com.android.systemui") return
 
         ActivityRecorder.record(dao, packageName) { readAmbientState() }
     }

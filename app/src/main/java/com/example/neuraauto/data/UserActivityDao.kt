@@ -22,9 +22,6 @@ interface UserActivityDao {
     @Query("SELECT COUNT(*) FROM user_activity_log")
     fun observeLogCount(): Flow<Int>
 
-    @Query("SELECT COUNT(*) FROM user_activity_log")
-    suspend fun logCount(): Int
-
     /**
      * Number of rows already stored for this exact (package, hour, weekday).
      *
@@ -38,10 +35,6 @@ interface UserActivityDao {
             "WHERE packageName = :packageName AND hourOfDay = :hourOfDay AND dayOfWeek = :dayOfWeek"
     )
     suspend fun countFor(packageName: String, hourOfDay: Int, dayOfWeek: Int): Int
-
-    /** Distinct ISO weekdays that appear anywhere in the log (the denominator). */
-    @Query("SELECT DISTINCT dayOfWeek FROM user_activity_log")
-    suspend fun distinctObservedDays(): List<Int>
 
     @Query("DELETE FROM user_activity_log")
     suspend fun clearAll()
