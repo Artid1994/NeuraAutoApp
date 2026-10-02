@@ -32,6 +32,11 @@ class AutomationAccessibility : AccessibilityService() {
          */
         @Volatile
         var pendingAction: AutomationAction? = null
+
+        private const val TAG = "AutomationAccessibility"
+        private const val LINE_PACKAGE = "com.linecorp.line"
+        private const val SYSTEM_UI_PACKAGE = "com.android.systemui"
+        private const val MAX_ACTION_ATTEMPTS = 10
     }
 
     private val dao by lazy { AppDatabase.getInstance(applicationContext).userActivityDao() }
@@ -213,11 +218,4 @@ class AutomationAccessibility : AccessibilityService() {
     }
 
     override fun onInterrupt() {}
-
-    private companion object {
-        const val TAG = "AutomationAccessibility"
-        const val LINE_PACKAGE = "com.linecorp.line"
-        const val SYSTEM_UI_PACKAGE = "com.android.systemui"
-        const val MAX_ACTION_ATTEMPTS = 10
-    }
 }
