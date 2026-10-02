@@ -35,5 +35,14 @@ data class UserActivityLog(
     val isCharging: Boolean,
 
     /** Active network transport was Wi-Fi when the event was captured. */
-    val isWifiConnected: Boolean
+    val isWifiConnected: Boolean,
+
+    /**
+     * SSID of the connected Wi-Fi network, or null when not on Wi-Fi or the
+     * platform refused the read (see [AmbientState.wifiSsid]).
+     */
+    val wifiSsid: String? = null,
+
+    /** Battery percentage 0..100 at capture time, or -1 when unavailable. */
+    val batteryPercent: Int = -1
 )

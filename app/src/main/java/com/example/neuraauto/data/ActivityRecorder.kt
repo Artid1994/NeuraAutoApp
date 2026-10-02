@@ -31,7 +31,7 @@ object ActivityRecorder {
     fun record(
         dao: UserActivityDao,
         packageName: String,
-        ambientState: () -> Pair<Boolean, Boolean>
+        ambientState: () -> AmbientState
     ) {
         scope.launch {
             try {
@@ -44,15 +44,17 @@ object ActivityRecorder {
 
                 if (dao.countFor(packageName, hourOfDay, dayOfWeek) > 0) return@launch
 
-                val (isCharging, isWifiConnected) = ambientState()
+                val ambient = ambientState()
                 dao.insert(
                     UserActivityLog(
                         packageName = packageName,
                         timestampMillis = now,
                         hourOfDay = hourOfDay,
                         dayOfWeek = dayOfWeek,
-                        isCharging = isCharging,
-                        isWifiConnected = isWifiConnected
+                        isCharging = ambient.isCharging,
+                        isWifiConnected = ambient.isWifiConnected,
+                        wifiSsid = ambient.wifiSsid,
+                        batteryPercent = ambient.batteryPercent
                     )
                 )
             } catch (e: Exception) {

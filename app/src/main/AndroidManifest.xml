@@ -7,6 +7,11 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!--
+      Best-effort Wi-Fi SSID read for context features. Without it the SSID is
+      simply null (treated as an "unknown network" bucket); nothing breaks.
+    -->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <!-- Alarms are cleared on reboot, so the schedule is restored at boot. -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 

@@ -6,11 +6,12 @@ import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.example.neuraauto.brain.ActionSequencePattern
 import com.example.neuraauto.brain.ActionStepKind
-import com.example.neuraauto.brain.DynamicNeuronLayer
 import com.example.neuraauto.brain.NeuralBrainEngine
+import com.example.neuraauto.brain.SparseNeuronLayer
 import com.example.neuraauto.data.AppDatabase
 import com.example.neuraauto.data.AutomationSettings
 import com.example.neuraauto.data.AutomationWorkflow
+import com.example.neuraauto.data.UserActivityLog
 import com.example.neuraauto.data.WorkflowRepository
 import com.example.neuraauto.service.WorkflowScheduler
 import com.example.neuraauto.worker.TrainingScheduler
@@ -24,7 +25,7 @@ import kotlinx.coroutines.withContext
  * HOW THE DECISION IS MADE — stated plainly, because it matters:
  * *which* routines qualify is decided by [NeuralBrainEngine.detectSequences],
  * a frequency estimate over stored events (supporting weekdays / observed
- * weekdays, threshold 0.8). The [DynamicNeuronLayer] does not and cannot
+ * weekdays, threshold 0.8). The [SparseNeuronLayer] does not and cannot
  * "recognise routines": it is trained on the qualifying patterns' features and
  * produces a score that is logged alongside them. Treating the layer's output
  * as the basis for sending real messages would be dishonest, since the layer
@@ -60,9 +61,9 @@ class ModelTrainingWorker(
 
             // ── 2. load persisted weights, train, persist ────────────────────
             val store = ModelWeightStore(applicationContext)
-            val layer = DynamicNeuronLayer(
+            val layer = SparseNeuronLayer(
                 inputSize = FEATURE_COUNT,
-                initialNeurons = HIDDEN_NEURONS
+                capacity = NEURON_CAPACITY
             )
             val hadSavedModel = store.load(layer)
 
@@ -185,25 +186,55 @@ class ModelTrainingWorker(
     }
 
     /**
-     * Hand-built feature vector for one pattern — 8 context features.
+     * Hand-built feature vector for one pattern — 10 context features.
      *
-     * Features 1–4 are computed directly from the pattern. Features 5–7
-     * (IsWeekend, IsCharging, IsWifi) default to 0.5 (neutral) because
-     * [ActionSequencePattern] does not carry ambient context; the worker could
-     * look these up from the activity log but that would couple training to
-     * real-time sensor state. Feature 8 (UserVerifiedWeight) is 1.0 when a
-     * verified workflow already exists for this slot.
+     * Features 1–4 come from the pattern itself. Features 5–8 are the ambient
+     * context the pattern was actually observed under, read from the stored
+     * activity sample rather than guessed: IsWeekend and IsCharging come from
+     * the row, IsWifi from the transport, and the Wi-Fi SSID is folded into a
+     * stable 0..1 bucket (0.5 = unknown network). Features 9–10 are the
+     * battery level and the user-verification weight.
+     *
+     * When no sample exists the ambient slots fall back to 0.5 (neutral), so a
+     * pattern is never credited with context it was not observed in.
      */
-    private fun featuresFor(pattern: ActionSequencePattern, isUserVerified: Boolean): FloatArray = floatArrayOf(
-        pattern.confidence,
-        pattern.supportDays.toFloat() / pattern.observedDays.coerceAtLeast(1),
-        (pattern.steps.size / STEP_SCALE).coerceAtMost(1f),
-        pattern.hourOfDay / 23f,
-        0.5f, // IsWeekend — neutral (pattern does not carry dayOfWeek)
-        0.5f, // IsCharging — neutral (would need activity log lookup)
-        0.5f, // IsWifi — neutral (would need activity log lookup)
-        if (isUserVerified) 1.0f else 0.0f
+    private fun featuresFor(
+        pattern: ActionSequencePattern,
+        sample: UserActivityLog?,
+        isUserVerified: Boolean
+    ): FloatArray = floatArrayOf(
+        pattern.confidence,                                              // 1 Confidence
+        pattern.supportDays.toFloat() / pattern.observedDays.coerceAtLeast(1), // 2 SupportRatio
+        (pattern.steps.size / STEP_SCALE).coerceAtMost(1f),               // 3 SequenceLength
+        pattern.hourOfDay / 23f,                                         // 4 HourWindow
+        sample?.let { if (it.dayOfWeek >= 6) 1f else 0f } ?: 0.5f,       // 5 IsWeekend
+        sample?.let { if (it.isCharging) 1f else 0f } ?: 0.5f,           // 6 IsCharging
+        sample?.let { if (it.isWifiConnected) 1f else 0f } ?: 0.5f,      // 7 IsWifi
+        if (isUserVerified) 1.0f else 0.0f,                              // 8 UserVerifiedWeight
+        ssidBucket(sample?.wifiSsid),                                    // 9 SsidBucket
+        batteryBucket(sample?.batteryPercent)                            // 10 BatteryBucket
     )
+
+    /**
+     * Fold an SSID into a stable 0..1 bucket.
+     *
+     * The SSID itself is never a feature value — only its hash, so the network
+     * name is not recoverable from the weight file. Unknown/null maps to 0.5.
+     */
+    private fun ssidBucket(ssid: String?): Float {
+        if (ssid.isNullOrBlank()) return 0.5f
+        var h = 2166136261u
+        for (c in ssid) {
+            h = (h xor c.code.toUInt()) * 16777619u
+        }
+        return (h % 1000u).toFloat() / 1000f
+    }
+
+    /** Battery percentage as 0..1, or 0.5 when unavailable. */
+    private fun batteryBucket(percent: Int?): Float {
+        if (percent == null || percent < 0) return 0.5f
+        return (percent.coerceIn(0, 100)) / 100f
+    }
 
     /** Message seeded from what the user actually typed, when available. */
     private fun messageFor(pattern: ActionSequencePattern): String =
@@ -217,9 +248,14 @@ class ModelTrainingWorker(
         private const val TAG = "ModelTrainingWorker"
 
         /** Features per pattern, see [featuresFor]. */
-        private const val FEATURE_COUNT = 8
+        private const val FEATURE_COUNT = 10
 
-        private const val HIDDEN_NEURONS = 32
+        /**
+         * Addressable neuron indices. This is representation capacity, not
+         * allocated memory — [SparseNeuronLayer] materialises a row only when
+         * a neuron actually wins.
+         */
+        private const val NEURON_CAPACITY = SparseNeuronLayer.DEFAULT_CAPACITY
 
         /** Steps at which the complexity feature saturates. */
         private const val STEP_SCALE = 6f

@@ -37,5 +37,18 @@ interface UserActivityDao {
     suspend fun countFor(packageName: String, hourOfDay: Int, dayOfWeek: Int): Int
 
     @Query("DELETE FROM user_activity_log")
-    suspend fun clearAll()
+    suspend fun clearAll(): Unit
+
+    /**
+     * One representative capture for this (package, hour) slot.
+     *
+     * Used by training to recover the ambient context a pattern was actually
+     * observed under — charging, Wi-Fi SSID, battery — instead of guessing a
+     * neutral value. Returns the newest row so the most recent conditions win.
+     */
+    @Query(
+        "SELECT * FROM user_activity_log WHERE packageName = :packageName " +
+            "AND hourOfDay = :hourOfDay ORDER BY timestampMillis DESC LIMIT 1"
+    )
+    suspend fun sampleFor(packageName: String, hourOfDay: Int): UserActivityLog?
 }

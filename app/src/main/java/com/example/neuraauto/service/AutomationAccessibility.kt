@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import android.net.wifi.WifiManager
 import android.os.BatteryManager
 import android.os.Bundle
 import android.util.Log
@@ -14,6 +15,7 @@ import android.view.accessibility.AccessibilityNodeInfo
 import com.example.neuraauto.brain.ActionStepKind
 import com.example.neuraauto.data.ActionSequenceTracker
 import com.example.neuraauto.data.ActivityRecorder
+import com.example.neuraauto.data.AmbientState
 import com.example.neuraauto.data.AppDatabase
 import com.example.neuraauto.data.AppExclusionManager
 import com.example.neuraauto.data.InAppActionLog
@@ -372,11 +374,25 @@ class AutomationAccessibility : AccessibilityService() {
         ActivityRecorder.record(dao, packageName) { readAmbientState() }
     }
 
-    /** @return (isCharging, isWifiConnected). Read on the recorder's IO thread. */
-    private fun readAmbientState(): Pair<Boolean, Boolean> {
+    /**
+     * Snapshot the ambient conditions for a capture. Read on the recorder's
+     * IO thread — each field is a system-service binder call.
+     *
+     * Wi-Fi SSID is best-effort: Android 8.1+ requires a granted location
+     * permission and Android 13+ also requires location services to be on.
+     * A refused read yields null, which the feature hasher treats as its own
+     * "unknown network" bucket rather than an error.
+     */
+    private fun readAmbientState(): AmbientState {
         val batteryManager =
             getSystemService(Context.BATTERY_SERVICE) as? BatteryManager
         val isCharging = batteryManager?.isCharging ?: false
+        val batteryPercent = try {
+            batteryManager?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY) ?: -1
+        } catch (e: Exception) {
+            Log.w(TAG, "battery capacity unavailable", e)
+            -1
+        }
 
         val connectivityManager =
             getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
@@ -386,7 +402,34 @@ class AutomationAccessibility : AccessibilityService() {
             ?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
             ?: false
 
-        return isCharging to isWifiConnected
+        val wifiSsid = if (isWifiConnected) readWifiSsid() else null
+
+        return AmbientState(
+            isCharging = isCharging,
+            isWifiConnected = isWifiConnected,
+            wifiSsid = wifiSsid,
+            batteryPercent = batteryPercent
+        )
+    }
+
+    /**
+     * Best-effort SSID read.
+     *
+     * Returns null rather than throwing when the platform withholds the value
+     * (missing location permission, location services off, or an SSID the
+     * system redacts as "<unknown ssid>").
+     */
+    private fun readWifiSsid(): String? = try {
+        val wifiManager =
+            applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+        val raw = wifiManager?.connectionInfo?.ssid
+            ?.removeSurrounding("\"")
+            ?.trim()
+        if (raw.isNullOrBlank() || raw == "<unknown ssid>") null else raw
+    } catch (e: Exception) {
+        // SecurityException when location is not granted; treat as unknown.
+        Log.d(TAG, "SSID unavailable: ${e.javaClass.simpleName}")
+        null
     }
 
     override fun onUnbind(intent: Intent?): Boolean {
