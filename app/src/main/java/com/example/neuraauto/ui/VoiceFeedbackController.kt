@@ -40,6 +40,15 @@ class VoiceFeedbackController(
     private var ttsReady = false
     private var listening = false
 
+    /**
+     * Text requested before the engine finished initialising.
+     *
+     * [TextToSpeech] initialises asynchronously, so a [speak] call made right
+     * after [initTts] would be dropped (ttsReady is still false). Holding the
+     * first request here is what makes the opening announcement audible.
+     */
+    private var pendingUtterance: String? = null
+
     /** Thai command phrases mapped to their action. */
     private val commandPhrases = mapOf(
         Command.SKIP to listOf("ข้าม", "ข้ามวันนี้", "skip", "ยกเลิก"),
@@ -75,13 +84,23 @@ class VoiceFeedbackController(
                 result != TextToSpeech.LANG_NOT_SUPPORTED
             if (!ttsReady) {
                 Log.w(TAG, "Thai TTS voice unavailable; running silent")
+                return@TextToSpeech
+            }
+            // Flush anything requested while the engine was still starting.
+            pendingUtterance?.let { queued ->
+                pendingUtterance = null
+                speak(queued)
             }
         }
     }
 
     /** Speak [text] in Thai, if the engine is ready. Never throws. */
     fun speak(text: String) {
-        if (!ttsReady) return
+        if (!ttsReady) {
+            // Engine still starting: keep the request rather than losing it.
+            if (pendingUtterance == null) pendingUtterance = text
+            return
+        }
         try {
             tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, UTTERANCE_ID)
         } catch (e: Exception) {
@@ -154,6 +173,7 @@ class VoiceFeedbackController(
         }
         tts = null
         ttsReady = false
+        pendingUtterance = null
     }
 
     private val listener = object : RecognitionListener {
