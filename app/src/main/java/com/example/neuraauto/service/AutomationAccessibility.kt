@@ -7,20 +7,37 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.BatteryManager
 import android.os.Bundle
+import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import com.example.neuraauto.data.ActivityRecorder
 import com.example.neuraauto.data.AppDatabase
 
+/**
+ * Single place where the device is actually driven.
+ *
+ * Two responsibilities, deliberately separated:
+ *  1. Phase 2 — record app-foreground changes (always on).
+ *  2. Phase 3 — execute a queued [AutomationAction] (only when one is pending).
+ */
 class AutomationAccessibility : AccessibilityService() {
 
     companion object {
         var instance: AutomationAccessibility? = null
             private set
-        var pendingTaskAction: String? = null
+
+        /**
+         * Work handed over by [SchedulerReceiver]. Volatile because it is
+         * written on the receiver's thread and read on the service's.
+         */
+        @Volatile
+        var pendingAction: AutomationAction? = null
     }
 
     private val dao by lazy { AppDatabase.getInstance(applicationContext).userActivityDao() }
+
+    /** How many window events an action may consume before it is abandoned. */
+    private var actionAttempts = 0
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -30,31 +47,144 @@ class AutomationAccessibility : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         val currentEvent = event ?: return
 
-        // Phase 2 data collection — independent of any pending automation task,
-        // so it runs before the early returns below.
         if (currentEvent.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
             captureForegroundChange(currentEvent)
+            tryExecutePendingAction(currentEvent)
         }
+    }
 
-        // Automation only runs when a task is actually queued; skipping the
-        // root-node lookup otherwise keeps this callback cheap.
-        if (pendingTaskAction != "SEND_LINE_MSG") return
+    // ── Phase 3: dynamic execution ───────────────────────────────────────────
 
-        val rootNode = rootInActiveWindow ?: return
-        executeLineWorkflow(rootNode)
+    /**
+     * Attempts the queued action whenever the foreground window belongs to its
+     * target package. Called on every window-state change; [actionAttempts]
+     * bounds the retries so a target that never exposes the expected input
+     * field cannot loop forever.
+     */
+    private fun tryExecutePendingAction(event: AccessibilityEvent) {
+        val action = pendingAction ?: return
+        val foregroundPackage = event.packageName?.toString() ?: return
+        if (foregroundPackage != action.targetPackage) return
+
+        if (actionAttempts >= MAX_ACTION_ATTEMPTS) {
+            Log.w(TAG, "Abandoning action for ${action.targetPackage} after $actionAttempts attempts")
+            clearPendingAction()
+            return
+        }
+        actionAttempts++
+
+        when (action.actionType) {
+            AutomationAction.ACTION_SEND_MESSAGE -> performSendMessage(action)
+            else -> {
+                Log.w(TAG, "Unsupported actionType ${action.actionType}")
+                clearPendingAction()
+            }
+        }
     }
 
     /**
-     * Log which app the user moved to, together with the ambient conditions at
-     * that moment. Written off the main thread by [ActivityRecorder]; failures
-     * are swallowed there so the service survives.
+     * Inject [AutomationAction.message] into the target app's input field and
+     * click send. Only clears the pending action once the send button has
+     * actually been activated.
      */
+    private fun performSendMessage(action: AutomationAction) {
+        val rootNode = rootInActiveWindow ?: return
+
+        val inputNodes = findInputNodes(rootNode, action.targetPackage)
+        if (inputNodes.isEmpty()) return
+
+        val inputNode = inputNodes.first()
+        val args = Bundle().apply {
+            putCharSequence(
+                AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
+                action.message
+            )
+        }
+        val textSet = inputNode.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+        if (!textSet) {
+            Log.w(TAG, "ACTION_SET_TEXT rejected for ${action.targetPackage}")
+            return
+        }
+
+        val sendButton = findSendButton(rootNode, action.targetPackage)
+        if (sendButton == null) {
+            Log.d(TAG, "Send button not found yet; will retry on next window event")
+            return
+        }
+
+        val clicked = sendButton.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+        if (clicked) {
+            Log.i(TAG, "Executed workflow ${action.workflowId} for ${action.targetPackage}")
+            clearPendingAction()
+            performGlobalAction(GLOBAL_ACTION_HOME)
+        } else {
+            Log.w(TAG, "Send button click rejected for ${action.targetPackage}")
+        }
+    }
+
+    /**
+     * Locate the message input. Uses the known view id when present, otherwise
+     * falls back to the first editable, non-password field in the hierarchy so
+     * the engine is not hard-wired to one app's internal resource names.
+     */
+    private fun findInputNodes(
+        rootNode: AccessibilityNodeInfo,
+        targetPackage: String
+    ): List<AccessibilityNodeInfo> {
+        val knownIds = knownInputViewIds(targetPackage)
+        for (viewId in knownIds) {
+            val nodes = rootNode.findAccessibilityNodeInfosByViewId(viewId)
+            if (!nodes.isNullOrEmpty()) return nodes
+        }
+        val fallback = mutableListOf<AccessibilityNodeInfo>()
+        collectEditableNodes(rootNode, fallback)
+        return fallback
+    }
+
+    private fun findSendButton(
+        rootNode: AccessibilityNodeInfo,
+        targetPackage: String
+    ): AccessibilityNodeInfo? {
+        for (viewId in knownSendViewIds(targetPackage)) {
+            val nodes = rootNode.findAccessibilityNodeInfosByViewId(viewId)
+            if (!nodes.isNullOrEmpty()) return nodes.first()
+        }
+        return null
+    }
+
+    /** View ids known to work for supported targets. */
+    private fun knownInputViewIds(targetPackage: String): List<String> = when (targetPackage) {
+        LINE_PACKAGE -> listOf("com.linecorp.line:id/chat_ui_input_edit_text")
+        else -> emptyList()
+    }
+
+    private fun knownSendViewIds(targetPackage: String): List<String> = when (targetPackage) {
+        LINE_PACKAGE -> listOf("com.linecorp.line:id/chat_ui_send_button")
+        else -> emptyList()
+    }
+
+    private fun collectEditableNodes(
+        node: AccessibilityNodeInfo,
+        sink: MutableList<AccessibilityNodeInfo>
+    ) {
+        if (node.isEditable && !node.isPassword) sink.add(node)
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            collectEditableNodes(child, sink)
+        }
+    }
+
+    private fun clearPendingAction() {
+        pendingAction = null
+        actionAttempts = 0
+    }
+
+    // ── Phase 2: activity capture ────────────────────────────────────────────
+
     private fun captureForegroundChange(event: AccessibilityEvent) {
         val packageName = event.packageName?.toString() ?: return
-        // Ignore our own UI and system chrome — only third-party app switches
-        // are interesting for routine detection.
         if (packageName == applicationContext.packageName) return
-        if (packageName == "com.android.systemui") return
+        if (packageName == SYSTEM_UI_PACKAGE) return
 
         ActivityRecorder.record(dao, packageName) { readAmbientState() }
     }
@@ -76,31 +206,18 @@ class AutomationAccessibility : AccessibilityService() {
         return isCharging to isWifiConnected
     }
 
-    private fun executeLineWorkflow(rootNode: AccessibilityNodeInfo) {
-        val inputNodes = rootNode.findAccessibilityNodeInfosByViewId("com.linecorp.line:id/chat_ui_input_edit_text")
-        if (!inputNodes.isNullOrEmpty()) {
-            val inputNode = inputNodes[0]
-            val args = Bundle().apply {
-                putCharSequence(
-                    AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
-                    "สวัสดีครับ ข้อความนี้ถูกส่งโดย NeuraAuto AI"
-                )
-            }
-            inputNode.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
-
-            val sendButtons = rootNode.findAccessibilityNodeInfosByViewId("com.linecorp.line:id/chat_ui_send_button")
-            if (!sendButtons.isNullOrEmpty()) {
-                sendButtons[0].performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                pendingTaskAction = null
-                performGlobalAction(GLOBAL_ACTION_HOME)
-            }
-        }
-    }
-
     override fun onUnbind(intent: Intent?): Boolean {
         instance = null
+        clearPendingAction()
         return super.onUnbind(intent)
     }
 
     override fun onInterrupt() {}
+
+    private companion object {
+        const val TAG = "AutomationAccessibility"
+        const val LINE_PACKAGE = "com.linecorp.line"
+        const val SYSTEM_UI_PACKAGE = "com.android.systemui"
+        const val MAX_ACTION_ATTEMPTS = 10
+    }
 }

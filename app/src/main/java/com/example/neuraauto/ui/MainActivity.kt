@@ -17,6 +17,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.neuraauto.brain.RoutinePattern
+import com.example.neuraauto.data.AutomationWorkflow
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -65,7 +66,8 @@ fun DashboardScreen(
         SmartRecommendationCard(
             state = state,
             onAnalyze = viewModel::analyze,
-            onEnable = viewModel::enableRoutine
+            onEnable = viewModel::enableWorkflow,
+            onDisable = viewModel::disableWorkflow
         )
     }
 }
@@ -106,7 +108,8 @@ private fun ActivityDataCard(logCount: Int) {
 private fun SmartRecommendationCard(
     state: DashboardUiState,
     onAnalyze: () -> Unit,
-    onEnable: (String, Int) -> Unit
+    onEnable: (String, Int) -> Unit,
+    onDisable: (AutomationWorkflow) -> Unit
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
@@ -139,9 +142,12 @@ private fun SmartRecommendationCard(
                     analysis.routines.forEach { routine ->
                         RoutineRow(
                             routine = routine,
-                            enabled = state.enabledRoutines
-                                .contains(state.routineKey(routine.packageName, routine.hourOfDay)),
-                            onEnable = { onEnable(routine.packageName, routine.hourOfDay) }
+                            enabledWorkflow = state.workflowFor(
+                                routine.packageName,
+                                routine.hourOfDay
+                            ),
+                            onEnable = { onEnable(routine.packageName, routine.hourOfDay) },
+                            onDisable = onDisable
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                     }
@@ -163,8 +169,9 @@ private fun SmartRecommendationCard(
 @Composable
 private fun RoutineRow(
     routine: RoutinePattern,
-    enabled: Boolean,
-    onEnable: () -> Unit
+    enabledWorkflow: AutomationWorkflow?,
+    onEnable: () -> Unit,
+    onDisable: (AutomationWorkflow) -> Unit
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
         Text(
@@ -177,12 +184,21 @@ private fun RoutineRow(
             style = MaterialTheme.typography.bodySmall
         )
         Spacer(modifier = Modifier.height(4.dp))
-        if (enabled) {
+
+        val active = enabledWorkflow?.isActive == true
+        if (active && enabledWorkflow != null) {
             Text(
-                text = "✓ เปิดใช้งานอัตโนมัติแล้ว",
+                text = "✓ ตั้งเวลาอัตโนมัติทุกวันแล้ว",
                 color = MaterialTheme.colorScheme.primary,
                 style = MaterialTheme.typography.bodySmall
             )
+            Spacer(modifier = Modifier.height(4.dp))
+            OutlinedButton(
+                onClick = { onDisable(enabledWorkflow) },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("ปิดการทำงานอัตโนมัติ")
+            }
         } else {
             OutlinedButton(onClick = onEnable, modifier = Modifier.fillMaxWidth()) {
                 Text("Enable Automation")

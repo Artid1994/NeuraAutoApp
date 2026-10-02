@@ -1,11 +1,14 @@
 package com.example.neuraauto.ui
 
 import android.app.Application
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.neuraauto.brain.BrainAnalysis
 import com.example.neuraauto.brain.NeuralBrainEngine
 import com.example.neuraauto.data.AppDatabase
+import com.example.neuraauto.data.AutomationWorkflow
+import com.example.neuraauto.service.WorkflowScheduler
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -18,16 +21,22 @@ data class DashboardUiState(
     val logCount: Int = 0,
     val analysis: BrainAnalysis? = null,
     val isAnalyzing: Boolean = false,
-    val enabledRoutines: Set<String> = emptySet()
+    val workflows: List<AutomationWorkflow> = emptyList()
 ) {
-    /** Key used to track which routine cards the user has enabled. */
-    fun routineKey(packageName: String, hourOfDay: Int) = "$packageName@$hourOfDay"
+    fun workflowFor(packageName: String, hourOfDay: Int): AutomationWorkflow? =
+        workflows.firstOrNull {
+            it.targetApp == packageName &&
+                it.scheduledHour == hourOfDay &&
+                it.scheduledMinute == 0
+        }
 }
 
 class DashboardViewModel(application: Application) : AndroidViewModel(application) {
 
     private val engine = NeuralBrainEngine()
-    private val dao = AppDatabase.getInstance(application).userActivityDao()
+    private val database = AppDatabase.getInstance(application)
+    private val activityDao = database.userActivityDao()
+    private val workflowDao = database.automationWorkflowDao()
 
     private val _uiState = MutableStateFlow(DashboardUiState())
     val uiState: StateFlow<DashboardUiState> = _uiState.asStateFlow()
@@ -35,8 +44,14 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     init {
         // Live count so the card reflects newly captured events without a reload.
         viewModelScope.launch {
-            dao.observeLogCount().collect { count ->
+            activityDao.observeLogCount().collect { count ->
                 _uiState.value = _uiState.value.copy(logCount = count)
+            }
+        }
+        // Live workflow list so enabling a routine updates the card immediately.
+        viewModelScope.launch {
+            workflowDao.observeAll().collect { workflows ->
+                _uiState.value = _uiState.value.copy(workflows = workflows)
             }
         }
     }
@@ -47,18 +62,66 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         _uiState.value = _uiState.value.copy(isAnalyzing = true)
         viewModelScope.launch {
             val logs = withContext(Dispatchers.IO) {
-                dao.recentLogs(NeuralBrainEngine.ANALYSIS_WINDOW)
+                activityDao.recentLogs(NeuralBrainEngine.ANALYSIS_WINDOW)
             }
             val analysis = engine.detectRoutines(logs)
             _uiState.value = _uiState.value.copy(analysis = analysis, isAnalyzing = false)
         }
     }
 
-    /** Records that the user accepted a recommendation. */
-    fun enableRoutine(packageName: String, hourOfDay: Int) {
-        val key = _uiState.value.routineKey(packageName, hourOfDay)
-        _uiState.value = _uiState.value.copy(
-            enabledRoutines = _uiState.value.enabledRoutines + key
-        )
+    /**
+     * Persist the accepted routine and register its daily alarm.
+     *
+     * The recommendation carries no message of its own, so a default is used
+     * here; editing it per workflow is a later UI concern.
+     */
+    fun enableWorkflow(packageName: String, hourOfDay: Int) {
+        viewModelScope.launch {
+            try {
+                val workflow = AutomationWorkflow(
+                    targetApp = packageName,
+                    scheduledHour = hourOfDay,
+                    scheduledMinute = 0,
+                    targetMessage = defaultMessageFor(packageName),
+                    isActive = true
+                )
+                // REPLACE on the (targetApp, hour, minute) slot keeps the row id
+                // stable for an already-enabled routine, so its alarm slot is reused.
+                val id = workflowDao.upsert(workflow)
+                val stored = workflowDao.byId(id) ?: workflow.copy(id = id)
+                withContext(Dispatchers.IO) {
+                    WorkflowScheduler.schedule(getApplication(), stored)
+                }
+                Log.i(TAG, "Enabled workflow $id for $packageName at $hourOfDay:00")
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to enable workflow for $packageName", e)
+            }
+        }
+    }
+
+    /** Disable a workflow and cancel its alarm. */
+    fun disableWorkflow(workflow: AutomationWorkflow) {
+        viewModelScope.launch {
+            try {
+                workflowDao.setActive(workflow.id, false)
+                withContext(Dispatchers.IO) {
+                    WorkflowScheduler.cancel(getApplication(), workflow)
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to disable workflow ${workflow.id}", e)
+            }
+        }
+    }
+
+    private fun defaultMessageFor(packageName: String): String =
+        if (packageName == LINE_PACKAGE) {
+            "สวัสดีครับ ข้อความนี้ถูกส่งโดย NeuraAuto AI"
+        } else {
+            "NeuraAuto AI automated message"
+        }
+
+    private companion object {
+        const val TAG = "DashboardViewModel"
+        const val LINE_PACKAGE = "com.linecorp.line"
     }
 }
