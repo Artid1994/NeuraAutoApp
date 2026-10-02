@@ -91,22 +91,29 @@ class SparseNeuronLayer(
      * @return the winning neuron's activation before the update.
      */
     fun trainStep(input: FloatArray, learningRate: Float = DEFAULT_LEARNING_RATE): Float {
+        require(input.size == inputSize) {
+            "Expected $inputSize inputs but received ${input.size}"
+        }
+
+        // Growth check must happen BEFORE forward(), because forward()
+        // materialises any candidate it scores. Checking afterwards would
+        // always report "not new" and the cap would never bite.
+        val candidates = candidateIndices(input)
+        val wouldAddNew = candidates.any { !weights.containsKey(it) }
+        if (wouldAddNew && materializedCount >= MAX_MATERIALIZED_NEURONS) {
+            // At capacity: score with what exists, learn nothing new.
+            return forward(input).maxByOrNull { it.activation }?.activation ?: 0f
+        }
+
         val scored = forward(input)
         val winner = scored.maxByOrNull { it.activation } ?: return 0f
-
-        // Refuse to grow the layer without bound. Existing neurons keep
-        // learning; new ones stop being admitted past the cap.
-        val isNew = !weights.containsKey(winner.index)
-        if (isNew && materializedCount >= MAX_MATERIALIZED_NEURONS) {
-            return winner.activation
-        }
 
         val row = weights.getOrPut(winner.index) { randomRow() }
         for (j in 0 until inputSize) {
             row[j] += learningRate * (input[j] - row[j])
         }
-        biases[winner.index] = biases.getOrPut(winner.index) { 0f } +
-            learningRate * (1f - biases.getOrPut(winner.index) { 0f })
+        val bias = biases.getOrPut(winner.index) { 0f }
+        biases[winner.index] = bias + learningRate * (1f - bias)
 
         return winner.activation
     }
@@ -218,8 +225,10 @@ class SparseNeuronLayer(
         private const val QUANT_SCALE = 16f
         private const val QUANT_BUCKETS = 16
 
-        private const val FEATURE_SALT = 0x9E3779B97F4A7C15uL.toLong()
-        private const val BIAS_SALT = 0xD1B54A32D192ED03uL.toLong()
+        /** splitmix64 salts. Plain Longs: `.toLong()` on a ULong literal is not
+         *  a compile-time constant, so `const val` is not allowed here. */
+        private val FEATURE_SALT = 0x9E3779B97F4A7C15uL.toLong()
+        private val BIAS_SALT = 0xD1B54A32D192ED03uL.toLong()
 
         /** splitmix64 finaliser — deterministic across runs and processes. */
         private fun mix(x: Long): Long {

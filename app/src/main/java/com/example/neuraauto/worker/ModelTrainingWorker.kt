@@ -79,7 +79,12 @@ class ModelTrainingWorker(
                     hour = pattern.hourOfDay,
                     minute = 0
                 )
-                val features = featuresFor(pattern, slot?.isUserVerified == true)
+                val sample = activityDao.sampleFor(pattern.packageName, pattern.hourOfDay)
+                val features = featuresFor(
+                    pattern = pattern,
+                    sample = sample,
+                    isUserVerified = slot?.isUserVerified == true
+                )
                 scoreSum += layer.trainStep(features)
                 trained++
             }
