@@ -12,6 +12,7 @@ import androidx.room.RoomDatabase
  *   v2 — + automation_workflow (Phase 3 user-enabled automations)
  *   v3 — + in_app_action_log (Phase 3.1 in-app interaction sequences)
  *   v4 — + isUserVerified, isUserRejected on automation_workflow (Phase 3.3)
+ *   v5 — + isLocked on automation_workflow (Phase 3.4 long-term memory)
  *
  * Each step only *adds* a table or column, so Room can generate the migrations
  * itself; [AutoMigration] is validated at compile time against the exported
@@ -24,12 +25,13 @@ import androidx.room.RoomDatabase
         AutomationWorkflow::class,
         InAppActionLog::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = true,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
         AutoMigration(from = 2, to = 3),
-        AutoMigration(from = 3, to = 4)
+        AutoMigration(from = 3, to = 4),
+        AutoMigration(from = 4, to = 5)
     ]
 )
 abstract class AppDatabase : RoomDatabase() {

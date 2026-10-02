@@ -18,7 +18,7 @@ import kotlin.random.Random
  */
 class DynamicNeuronLayer(
     val inputSize: Int,
-    initialNeurons: Int = 16
+    initialNeurons: Int = 32
 ) {
     private val weights = MutableList(initialNeurons) {
         FloatArray(inputSize) { Random.nextFloat() * 0.1f - 0.05f }

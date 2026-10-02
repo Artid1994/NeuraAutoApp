@@ -53,5 +53,15 @@ data class AutomationWorkflow(
     @ColumnInfo(defaultValue = "0")
     val isUserRejected: Boolean = false,
 
+    /**
+     * Whether this workflow is locked as long-term memory.
+     *
+     * Locked workflows are never deleted by auto-pruning or background
+     * training. Verified and user-created workflows default to locked;
+     * auto-created workflows start unlocked until the user verifies them.
+     */
+    @ColumnInfo(defaultValue = "1")
+    val isLocked: Boolean = true,
+
     val createdAtMillis: Long = System.currentTimeMillis()
 )

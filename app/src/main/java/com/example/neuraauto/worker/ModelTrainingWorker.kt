@@ -72,7 +72,12 @@ class ModelTrainingWorker(
             var scoreSum = 0f
             var trained = 0
             for (pattern in patterns) {
-                val features = featuresFor(pattern)
+                val slot = workflowDao.findBySlot(
+                    packageName = pattern.packageName,
+                    hour = pattern.hourOfDay,
+                    minute = 0
+                )
+                val features = featuresFor(pattern, slot?.isUserVerified == true)
                 scoreSum += layer.trainStep(features)
                 trained++
             }
@@ -116,7 +121,8 @@ class ModelTrainingWorker(
                                 message = messageFor(pattern),
                                 steps = pattern.steps.map { it.kind.name }
                             ),
-                            isActive = true
+                            isActive = true,
+                            isLocked = false // auto-created; user can lock via verify
                         )
                     )
                     WorkflowScheduler.schedule(applicationContext, stored)
@@ -148,16 +154,24 @@ class ModelTrainingWorker(
     }
 
     /**
-     * Hand-built feature vector for one pattern.
+     * Hand-built feature vector for one pattern — 8 context features.
      *
-     * Deliberately small and interpretable — every value is already meaningful
-     * on its own, which is what makes the layer's weights inspectable.
+     * Features 1–4 are computed directly from the pattern. Features 5–7
+     * (IsWeekend, IsCharging, IsWifi) default to 0.5 (neutral) because
+     * [ActionSequencePattern] does not carry ambient context; the worker could
+     * look these up from the activity log but that would couple training to
+     * real-time sensor state. Feature 8 (UserVerifiedWeight) is 1.0 when a
+     * verified workflow already exists for this slot.
      */
-    private fun featuresFor(pattern: ActionSequencePattern): FloatArray = floatArrayOf(
+    private fun featuresFor(pattern: ActionSequencePattern, isUserVerified: Boolean): FloatArray = floatArrayOf(
         pattern.confidence,
         pattern.supportDays.toFloat() / pattern.observedDays.coerceAtLeast(1),
-        (pattern.occurrences / OCCURRENCE_SCALE).coerceAtMost(1f),
-        (pattern.steps.size / STEP_SCALE).coerceAtMost(1f)
+        (pattern.steps.size / STEP_SCALE).coerceAtMost(1f),
+        pattern.hourOfDay / 23f,
+        0.5f, // IsWeekend — neutral (pattern does not carry dayOfWeek)
+        0.5f, // IsCharging — neutral (would need activity log lookup)
+        0.5f, // IsWifi — neutral (would need activity log lookup)
+        if (isUserVerified) 1.0f else 0.0f
     )
 
     /** Message seeded from what the user actually typed, when available. */
@@ -172,12 +186,9 @@ class ModelTrainingWorker(
         private const val TAG = "ModelTrainingWorker"
 
         /** Features per pattern, see [featuresFor]. */
-        private const val FEATURE_COUNT = 4
+        private const val FEATURE_COUNT = 8
 
-        private const val HIDDEN_NEURONS = 16
-
-        /** Occurrences at which the frequency feature saturates. */
-        private const val OCCURRENCE_SCALE = 10f
+        private const val HIDDEN_NEURONS = 32
 
         /** Steps at which the complexity feature saturates. */
         private const val STEP_SCALE = 6f

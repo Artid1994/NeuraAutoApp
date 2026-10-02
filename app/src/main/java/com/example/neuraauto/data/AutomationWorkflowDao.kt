@@ -60,4 +60,12 @@ interface AutomationWorkflowDao {
     /** Mark a workflow as explicitly rejected by the user. */
     @Query("UPDATE automation_workflow SET isUserRejected = 1, isUserVerified = 0 WHERE id = :id")
     suspend fun rejectWorkflow(id: Long)
+
+    /** Lock a workflow as long-term memory (protected from pruning). */
+    @Query("UPDATE automation_workflow SET isLocked = 1 WHERE id = :id")
+    suspend fun lockWorkflow(id: Long)
+
+    /** Unlock a workflow (allow pruning). */
+    @Query("UPDATE automation_workflow SET isLocked = 0 WHERE id = :id")
+    suspend fun unlockWorkflow(id: Long)
 }

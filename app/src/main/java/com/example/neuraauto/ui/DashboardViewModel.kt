@@ -270,12 +270,13 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         _uiState.value = _uiState.value.copy(testResult = null)
     }
 
-    /** Mark a workflow as explicitly verified by the user. */
+    /** Mark a workflow as explicitly verified by the user and lock it. */
     fun verifyWorkflow(workflow: AutomationWorkflow) {
         viewModelScope.launch {
             try {
                 workflowDao.verifyWorkflow(workflow.id)
-                Log.i(TAG, "Verified workflow ${workflow.id}")
+                workflowDao.lockWorkflow(workflow.id)
+                Log.i(TAG, "Verified and locked workflow ${workflow.id}")
             } catch (e: Exception) {
                 Log.w(TAG, "Failed to verify workflow ${workflow.id}", e)
             }

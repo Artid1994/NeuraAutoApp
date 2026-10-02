@@ -78,6 +78,6 @@ class ModelWeightStore(context: Context) {
         const val TAG = "ModelWeightStore"
         const val FILE_NAME = "neuraauto_model.bin"
         const val MAGIC = 0x4E455552 // "NEUR"
-        const val VERSION = 1
+        const val VERSION = 2 // v2: 32 neurons, 8 features (Phase 3.4)
     }
 }

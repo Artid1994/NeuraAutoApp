@@ -25,8 +25,13 @@ object InAppActionRecorder {
     /** Characters kept from captured text. */
     const val MAX_TEXT_SNIPPET = 60
 
-    /** How long captured interactions are retained before pruning. */
-    private const val RETENTION_DAYS = 14
+    /**
+     * How long captured interactions are retained before pruning.
+     *
+     * Pruning ONLY touches `in_app_action_log` rows — `automation_workflow`
+     * rows are completely isolated and never affected by retention sweeps.
+     */
+    private const val RETENTION_DAYS = 7
 
     /** Prune roughly once per this many writes rather than on every insert. */
     private const val PRUNE_INTERVAL = 100

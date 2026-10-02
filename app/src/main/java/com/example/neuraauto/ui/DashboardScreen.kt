@@ -35,7 +35,7 @@ import com.example.neuraauto.data.WorkflowRepository
  * leave the badge stale.
  */
 val APP_VERSION_LABEL: String =
-    "NeuraAuto AI v${BuildConfig.VERSION_NAME} (Phase 3.3: Interactive AI)"
+    "NeuraAuto AI v${BuildConfig.VERSION_NAME} (Phase 3.4: Long-Term Memory)"
 
 /** 28dp app icon, or a lettered placeholder when the app cannot be resolved. */
 @Composable
@@ -110,7 +110,7 @@ private fun AutonomousAiCard(
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
-                text = "🤖 Autonomous AI (Phase 3.3)",
+                text = "🤖 Autonomous AI (Phase 3.4)",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold
             )
@@ -758,6 +758,20 @@ private fun WorkflowRow(
             style = MaterialTheme.typography.bodySmall,
             color = Color.Gray
         )
+        Spacer(modifier = Modifier.height(4.dp))
+        if (workflow.isLocked) {
+            Surface(
+                color = MaterialTheme.colorScheme.tertiaryContainer,
+                shape = MaterialTheme.shapes.extraSmall
+            ) {
+                Text(
+                    text = "🔒 Locked / Long-Term Memory",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onTertiaryContainer,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                )
+            }
+        }
         Spacer(modifier = Modifier.height(8.dp))
         OutlinedButton(
             onClick = onTestTrigger,
