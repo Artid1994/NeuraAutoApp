@@ -10,23 +10,33 @@ import androidx.room.RoomDatabase
  * Schema history:
  *   v1 — user_activity_log (Phase 2 activity capture)
  *   v2 — + automation_workflow (Phase 3 user-enabled automations)
+ *   v3 — + in_app_action_log (Phase 3.1 in-app interaction sequences)
  *
- * The 1→2 change only *adds* a table, so Room can generate the migration
- * itself; [AutoMigration] is validated at compile time, which means a
- * mismatch fails the build instead of crashing at runtime on upgrade.
- * Existing activity logs are preserved.
+ * Each step only *adds* a table, so Room can generate the migrations itself;
+ * [AutoMigration] is validated at compile time against the exported schemas in
+ * `app/schemas/`, which means a mismatch fails the build instead of crashing at
+ * runtime on upgrade. Existing rows are preserved.
  */
 @Database(
-    entities = [UserActivityLog::class, AutomationWorkflow::class],
-    version = 2,
+    entities = [
+        UserActivityLog::class,
+        AutomationWorkflow::class,
+        InAppActionLog::class
+    ],
+    version = 3,
     exportSchema = true,
-    autoMigrations = [AutoMigration(from = 1, to = 2)]
+    autoMigrations = [
+        AutoMigration(from = 1, to = 2),
+        AutoMigration(from = 2, to = 3)
+    ]
 )
 abstract class AppDatabase : RoomDatabase() {
 
     abstract fun userActivityDao(): UserActivityDao
 
     abstract fun automationWorkflowDao(): AutomationWorkflowDao
+
+    abstract fun inAppActionDao(): InAppActionDao
 
     companion object {
         private const val DB_NAME = "neuraauto.db"

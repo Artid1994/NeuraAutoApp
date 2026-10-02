@@ -4,8 +4,11 @@ import android.app.Application
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.neuraauto.brain.ActionSequencePattern
+import com.example.neuraauto.brain.ActionStepKind
 import com.example.neuraauto.brain.BrainAnalysis
 import com.example.neuraauto.brain.NeuralBrainEngine
+import com.example.neuraauto.brain.SequenceAnalysis
 import com.example.neuraauto.data.AppDatabase
 import com.example.neuraauto.data.AutomationWorkflow
 import com.example.neuraauto.service.AutomationAction
@@ -22,7 +25,10 @@ import kotlinx.coroutines.withContext
 /** UI state for the dashboard. */
 data class DashboardUiState(
     val logCount: Int = 0,
+    val actionCount: Int = 0,
     val analysis: BrainAnalysis? = null,
+    /** Multi-step workflows reconstructed from captured interactions (Phase 3.1). */
+    val sequences: List<SequenceAnalysis> = emptyList(),
     val isAnalyzing: Boolean = false,
     val workflows: List<AutomationWorkflow> = emptyList(),
     /** Transient feedback from "Test Trigger Now". */
@@ -44,6 +50,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     private val database = AppDatabase.getInstance(application)
     private val activityDao = database.userActivityDao()
     private val workflowDao = database.automationWorkflowDao()
+    private val actionDao = database.inAppActionDao()
 
     private val _uiState = MutableStateFlow(DashboardUiState())
     val uiState: StateFlow<DashboardUiState> = _uiState.asStateFlow()
@@ -61,6 +68,12 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 _uiState.value = _uiState.value.copy(workflows = workflows)
             }
         }
+        // Live count of captured in-app interactions.
+        viewModelScope.launch {
+            actionDao.observeActionCount().collect { count ->
+                _uiState.value = _uiState.value.copy(actionCount = count)
+            }
+        }
     }
 
     /** Run routine detection over the most recent activity rows. */
@@ -72,7 +85,21 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 activityDao.recentLogs(NeuralBrainEngine.ANALYSIS_WINDOW)
             }
             val analysis = engine.detectRoutines(logs)
-            _uiState.value = _uiState.value.copy(analysis = analysis, isAnalyzing = false)
+
+            // Phase 3.1: reconstruct multi-step workflows from interactions.
+            val actions = withContext(Dispatchers.IO) {
+                actionDao.recentActions(NeuralBrainEngine.ANALYSIS_WINDOW)
+            }
+            val observedDays = withContext(Dispatchers.IO) {
+                actionDao.distinctObservedDays()
+            }
+            val sequences = engine.detectSequences(actions, observedDays)
+
+            _uiState.value = _uiState.value.copy(
+                analysis = analysis,
+                sequences = sequences,
+                isAnalyzing = false
+            )
         }
     }
 
@@ -102,6 +129,44 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 Log.i(TAG, "Enabled workflow $id for $packageName at $hourOfDay:00")
             } catch (e: Exception) {
                 Log.w(TAG, "Failed to enable workflow for $packageName", e)
+            }
+        }
+    }
+
+    /**
+     * Enable a workflow reconstructed from a detected sequence.
+     *
+     * The message is seeded from the text actually typed in the captured flow,
+     * so the recommendation reflects what the user really does rather than a
+     * generic placeholder. Falls back to the default when nothing was typed.
+     */
+    fun enableSequenceWorkflow(pattern: ActionSequencePattern) {
+        viewModelScope.launch {
+            try {
+                val typed = pattern.steps
+                    .firstOrNull { it.kind == ActionStepKind.TYPE_TEXT }
+                    ?.textSnippet
+                    ?.takeIf { it.isNotBlank() }
+
+                val workflow = AutomationWorkflow(
+                    targetApp = pattern.packageName,
+                    scheduledHour = pattern.hourOfDay,
+                    scheduledMinute = 0,
+                    targetMessage = typed ?: defaultMessageFor(pattern.packageName),
+                    isActive = true
+                )
+                val id = workflowDao.upsert(workflow)
+                val stored = workflowDao.byId(id) ?: workflow.copy(id = id)
+                withContext(Dispatchers.IO) {
+                    WorkflowScheduler.schedule(getApplication(), stored)
+                }
+                Log.i(
+                    TAG,
+                    "Enabled sequence workflow $id for ${pattern.packageName} " +
+                        "(${pattern.steps.size} steps) at ${pattern.hourOfDay}:00"
+                )
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to enable sequence workflow", e)
             }
         }
     }

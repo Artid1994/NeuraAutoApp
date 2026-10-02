@@ -10,8 +10,11 @@ import android.os.Bundle
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import com.example.neuraauto.data.ActionSequenceTracker
 import com.example.neuraauto.data.ActivityRecorder
 import com.example.neuraauto.data.AppDatabase
+import com.example.neuraauto.data.InAppActionLog
+import com.example.neuraauto.data.InAppActionRecorder
 
 /**
  * Single place where the device is actually driven.
@@ -41,6 +44,10 @@ class AutomationAccessibility : AccessibilityService() {
 
     private val dao by lazy { AppDatabase.getInstance(applicationContext).userActivityDao() }
 
+    private val actionDao by lazy {
+        AppDatabase.getInstance(applicationContext).inAppActionDao()
+    }
+
     /** How many window events an action may consume before it is abandoned. */
     private var actionAttempts = 0
 
@@ -52,9 +59,17 @@ class AutomationAccessibility : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         val currentEvent = event ?: return
 
-        if (currentEvent.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
-            captureForegroundChange(currentEvent)
-            tryExecutePendingAction(currentEvent)
+        when (currentEvent.eventType) {
+            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
+                captureForegroundChange(currentEvent)
+                tryExecutePendingAction(currentEvent)
+            }
+
+            AccessibilityEvent.TYPE_VIEW_CLICKED ->
+                captureInteraction(currentEvent, InAppActionLog.EVENT_CLICK)
+
+            AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED ->
+                captureInteraction(currentEvent, InAppActionLog.EVENT_TEXT_CHANGE)
         }
     }
 
@@ -194,6 +209,57 @@ class AutomationAccessibility : AccessibilityService() {
         actionAttempts = 0
     }
 
+    // ── Phase 3.1: in-app interaction capture ────────────────────────────────
+
+    /**
+     * Record one click or text edit.
+     *
+     * Everything is read from the event/node up front because the accessibility
+     * framework may recycle the source node as soon as this callback returns.
+     */
+    private fun captureInteraction(event: AccessibilityEvent, eventType: String) {
+        val packageName = event.packageName?.toString() ?: return
+        if (packageName == applicationContext.packageName) return
+        if (packageName == SYSTEM_UI_PACKAGE) return
+
+        // Do not learn from our own automation. While an action is pending for
+        // this package, the events being emitted are the ones WE caused; storing
+        // them would feed the detector its own output and reinforce the pattern
+        // it just executed.
+        if (pendingAction?.targetPackage == packageName) return
+
+        // Never capture anything from a password field.
+        if (event.isPassword) return
+
+        val source = event.source
+        val viewId = try {
+            source?.viewIdResourceName
+        } catch (e: Exception) {
+            Log.w(TAG, "viewIdResourceName unavailable", e)
+            null
+        }
+
+        val rawText = if (eventType == InAppActionLog.EVENT_TEXT_CHANGE) {
+            // AccessibilityEvent.text is the full field contents, not the delta.
+            try {
+                event.text?.lastOrNull()?.toString()
+            } catch (e: Exception) {
+                Log.w(TAG, "text read failed", e)
+                null
+            }
+        } else {
+            null
+        }
+
+        InAppActionRecorder.record(
+            dao = actionDao,
+            packageName = packageName,
+            eventType = eventType,
+            viewId = viewId,
+            rawText = rawText
+        )
+    }
+
     // ── Phase 2: activity capture ────────────────────────────────────────────
 
     private fun captureForegroundChange(event: AccessibilityEvent) {
@@ -224,6 +290,9 @@ class AutomationAccessibility : AccessibilityService() {
     override fun onUnbind(intent: Intent?): Boolean {
         instance = null
         clearPendingAction()
+        // End the current interaction window so a group cannot span a service
+        // restart (which could be hours later).
+        ActionSequenceTracker.reset()
         return super.onUnbind(intent)
     }
 

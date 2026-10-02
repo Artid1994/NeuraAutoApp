@@ -14,6 +14,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.neuraauto.BuildConfig
+import com.example.neuraauto.brain.ActionSequencePattern
+import com.example.neuraauto.brain.ActionStepBuilder
 import com.example.neuraauto.brain.RoutinePattern
 import com.example.neuraauto.data.AutomationWorkflow
 
@@ -24,7 +26,7 @@ import com.example.neuraauto.data.AutomationWorkflow
  * leave the badge stale.
  */
 val APP_VERSION_LABEL: String =
-    "NeuraAuto AI v${BuildConfig.VERSION_NAME} (Phase 3: Execution Engine)"
+    "NeuraAuto AI v${BuildConfig.VERSION_NAME} (Phase 3.1: Sequence Collector)"
 
 @Composable
 fun DashboardScreen(
@@ -50,12 +52,21 @@ fun DashboardScreen(
 
         AccessibilityCard(onOpenAccessibilitySettings = onOpenAccessibilitySettings)
 
-        ActivityDataCard(logCount = state.logCount)
+        ActivityDataCard(
+            logCount = state.logCount,
+            actionCount = state.actionCount
+        )
 
         SmartRecommendationCard(
             state = state,
             onAnalyze = viewModel::analyze,
             onEnable = viewModel::enableWorkflow,
+            onDisable = viewModel::disableWorkflow
+        )
+
+        LearnedWorkflowCard(
+            state = state,
+            onEnable = viewModel::enableSequenceWorkflow,
             onDisable = viewModel::disableWorkflow
         )
 
@@ -107,15 +118,16 @@ private fun AccessibilityCard(onOpenAccessibilitySettings: () -> Unit) {
 }
 
 @Composable
-private fun ActivityDataCard(logCount: Int) {
+private fun ActivityDataCard(logCount: Int, actionCount: Int) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(text = "ข้อมูลกิจกรรมที่เก็บได้", style = MaterialTheme.typography.titleMedium)
             Spacer(modifier = Modifier.height(8.dp))
-            Text(text = "บันทึกแล้ว $logCount เหตุการณ์")
+            Text(text = "สลับแอป: บันทึกแล้ว $logCount เหตุการณ์")
+            Text(text = "การใช้งานในแอป: $actionCount การกระทำ")
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "ระบบจะบันทึกทุกครั้งที่คุณสลับแอป (สูงสุด 1 ครั้ง/ชั่วโมง/วัน)",
+                text = "ระบบบันทึกการสลับแอป (1 ครั้ง/ชั่วโมง/วัน) และการคลิก/พิมพ์ข้อความในแอป",
                 style = MaterialTheme.typography.bodySmall
             )
         }
@@ -220,6 +232,111 @@ private fun RoutineRow(
         } else {
             OutlinedButton(onClick = onEnable, modifier = Modifier.fillMaxWidth()) {
                 Text("Enable Automation")
+            }
+        }
+    }
+}
+
+@Composable
+private fun LearnedWorkflowCard(
+    state: DashboardUiState,
+    onEnable: (ActionSequencePattern) -> Unit,
+    onDisable: (AutomationWorkflow) -> Unit
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = "🧩 Learned Workflows (Phase 3.1)",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "สร้างจากลำดับการคลิก/พิมพ์ที่ระบบเก็บได้ในแต่ละวัน",
+                style = MaterialTheme.typography.bodySmall
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+
+            if (state.sequences.isEmpty()) {
+                Text(
+                    text = "ยังไม่พบลำดับงานที่มั่นใจเกิน 80%\n" +
+                        "(เก็บได้ ${state.actionCount} การกระทำ — " +
+                        "ต้องมีการพิมพ์ข้อความหรือกดส่งอย่างน้อย 1 ขั้นตอน)"
+                )
+            } else {
+                state.sequences.forEach { sequence ->
+                    sequence.patterns.forEach { pattern ->
+                        SequenceRow(
+                            pattern = pattern,
+                            enabledWorkflow = state.workflowFor(
+                                pattern.packageName,
+                                pattern.hourOfDay
+                            ),
+                            onEnable = { onEnable(pattern) },
+                            onDisable = onDisable
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SequenceRow(
+    pattern: ActionSequencePattern,
+    enabledWorkflow: AutomationWorkflow?,
+    onEnable: () -> Unit,
+    onDisable: (AutomationWorkflow) -> Unit
+) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        shape = MaterialTheme.shapes.small,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text(
+                text = "${ActionStepBuilder.appLabel(pattern.packageName)} • " +
+                    "${"%02d".format(pattern.hourOfDay)}:00 น.",
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                text = "ความมั่นใจ ${pattern.confidencePercent}% " +
+                    "(พบ ${pattern.supportDays}/${pattern.observedDays} วัน, " +
+                    "${pattern.occurrences} ครั้ง)",
+                style = MaterialTheme.typography.bodySmall
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+
+            // The actual step-by-step flow, one line per step.
+            pattern.steps.forEachIndexed { index, step ->
+                val detail = step.textSnippet?.let { " — \"$it\"" } ?: ""
+                Text(
+                    text = "${index + 1}. ${step.label}$detail",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+            val active = enabledWorkflow?.isActive == true
+            if (active && enabledWorkflow != null) {
+                Text(
+                    text = "✓ ตั้งเวลาอัตโนมัติทุกวันแล้ว",
+                    color = MaterialTheme.colorScheme.primary,
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                OutlinedButton(
+                    onClick = { onDisable(enabledWorkflow) },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("ปิดการทำงานอัตโนมัติ")
+                }
+            } else {
+                OutlinedButton(onClick = onEnable, modifier = Modifier.fillMaxWidth()) {
+                    Text("Enable Automation")
+                }
             }
         }
     }

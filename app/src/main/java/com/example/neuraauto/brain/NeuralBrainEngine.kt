@@ -1,5 +1,6 @@
 package com.example.neuraauto.brain
 
+import com.example.neuraauto.data.InAppActionLog
 import com.example.neuraauto.data.UserActivityLog
 
 /**
@@ -109,6 +110,84 @@ class NeuralBrainEngine {
             .toSet()
             .size
         return supportDays.toFloat() / observedDays.toFloat()
+    }
+
+    /**
+     * Reconstruct recurring multi-step workflows from captured interactions.
+     *
+     * Confidence uses the same frequency estimate as [detectRoutines]: the
+     * fraction of observed weekdays on which this exact step shape occurred.
+     * Two flows count as the same workflow when their step *kinds* match, so
+     * "Type Text" with different content still matches, but "Type then Send"
+     * and "Type then Click" do not.
+     *
+     * Sequences that never type or send anything are discarded — recommending
+     * "Open LINE → Click" would not be worth acting on.
+     *
+     * @param actions rows from [com.example.neuraauto.data.InAppActionDao.recentActions].
+     * @param observedDays distinct weekdays present in the action log.
+     */
+    fun detectSequences(
+        actions: List<InAppActionLog>,
+        observedDays: Int,
+        confidenceThreshold: Float = DEFAULT_CONFIDENCE_THRESHOLD
+    ): List<SequenceAnalysis> {
+        if (actions.isEmpty() || observedDays <= 0) return emptyList()
+
+        return actions
+            .groupBy { it.packageName to it.hourOfDay }
+            .mapNotNull { (key, rowsForPair) ->
+                val (packageName, hourOfDay) = key
+
+                // One entry per contiguous interaction group.
+                val groups = rowsForPair
+                    .groupBy { it.sequenceGroupHash }
+                    .map { (_, rows) ->
+                        ActionStepBuilder.build(packageName, rows) to
+                            rows.map { it.dayOfWeek }.toSet()
+                    }
+                    .filter { it.first.isNotEmpty() }
+
+                val patterns = groups
+                    .groupBy { ActionStepBuilder.signature(it.first) }
+                    .map { (_, sameShape) ->
+                        // Longest observed instance best represents the shape.
+                        val representative = sameShape.maxByOrNull { it.first.size }!!.first
+                        val supportDays = sameShape.flatMap { it.second }.toSet().size
+                        ActionSequencePattern(
+                            packageName = packageName,
+                            hourOfDay = hourOfDay,
+                            steps = representative,
+                            confidence = supportDays.toFloat() / observedDays.toFloat(),
+                            supportDays = supportDays,
+                            observedDays = observedDays,
+                            occurrences = sameShape.size
+                        )
+                    }
+                    .filter { it.confidence >= confidenceThreshold }
+                    .filter { pattern -> pattern.steps.any { it.isActionable() } }
+                    .sortedWith(
+                        compareByDescending<ActionSequencePattern> { it.confidence }
+                            .thenByDescending { it.occurrences }
+                            .thenBy { it.steps.size }
+                    )
+
+                if (patterns.isEmpty()) {
+                    null
+                } else {
+                    SequenceAnalysis(
+                        packageName = packageName,
+                        hourOfDay = hourOfDay,
+                        observedDays = observedDays,
+                        patterns = patterns
+                    )
+                }
+            }
+            .sortedWith(
+                compareByDescending<SequenceAnalysis> {
+                    it.topPattern?.confidence ?: 0f
+                }.thenBy { it.hourOfDay }
+            )
     }
 
     companion object {

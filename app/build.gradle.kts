@@ -12,8 +12,8 @@ android {
         applicationId = "com.example.neuraauto"
         minSdk = 26
         targetSdk = 35
-        versionCode = 4
-        versionName = "3.0.1-phase3-fix"
+        versionCode = 5
+        versionName = "3.1.0-phase3-sequence"
     }
 
     buildTypes {
