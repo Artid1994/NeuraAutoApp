@@ -1,5 +1,6 @@
 package com.example.neuraauto.data
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
@@ -42,12 +43,14 @@ data class AutomationWorkflow(
      * Whether the user has explicitly confirmed this workflow is correct.
      * Set when the user clicks "Verify Pattern" rather than just "Enable".
      */
+    @ColumnInfo(defaultValue = "0")
     val isUserVerified: Boolean = false,
 
     /**
      * Whether the user has explicitly rejected this workflow. A rejected
      * workflow is never auto-enabled by background training.
      */
+    @ColumnInfo(defaultValue = "0")
     val isUserRejected: Boolean = false,
 
     val createdAtMillis: Long = System.currentTimeMillis()
