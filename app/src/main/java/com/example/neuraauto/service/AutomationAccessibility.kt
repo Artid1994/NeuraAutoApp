@@ -378,5 +378,49 @@ class AutomationAccessibility : AccessibilityService() {
         return super.onUnbind(intent)
     }
 
+    // ── Phase 3.3: gesture primitives ───────────────────────────────────────
+
+    /**
+     * Perform a swipe gesture on the screen.
+     *
+     * @param startX Start X coordinate in pixels.
+     * @param startY Start Y coordinate in pixels.
+     * @param endX End X coordinate in pixels.
+     * @param endY End Y coordinate in pixels.
+     * @param durationMs Duration of the gesture in milliseconds.
+     * @return true if the gesture was dispatched.
+     */
+    fun performSwipe(
+        startX: Int,
+        startY: Int,
+        endX: Int,
+        endY: Int,
+        durationMs: Long = 300L
+    ): Boolean {
+        val path = android.graphics.Path().apply {
+            moveTo(startX.toFloat(), startY.toFloat())
+            lineTo(endX.toFloat(), endY.toFloat())
+        }
+        val builder = android.accessibilityservice.GestureDescription.Builder()
+            .addStroke(GestureDescription.StrokeDescription(path, 0L, durationMs))
+        return dispatchGesture(builder.build(), null, null)
+    }
+
+    /**
+     * Tap at a screen coordinate.
+     *
+     * @param x X coordinate in pixels.
+     * @param y Y coordinate in pixels.
+     * @return true if the gesture was dispatched.
+     */
+    fun performTap(x: Int, y: Int): Boolean {
+        val path = android.graphics.Path().apply {
+            moveTo(x.toFloat(), y.toFloat())
+        }
+        val builder = android.accessibilityservice.GestureDescription.Builder()
+            .addStroke(GestureDescription.StrokeDescription(path, 0L, 100L))
+        return dispatchGesture(builder.build(), null, null)
+    }
+
     override fun onInterrupt() {}
 }

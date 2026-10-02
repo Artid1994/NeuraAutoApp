@@ -41,15 +41,12 @@ class SchedulerReceiver : BroadcastReceiver() {
             return
         }
 
-        // Same dispatch path the manual "Test Trigger Now" button uses.
-        val outcome = WorkflowRunner.dispatch(context, action)
-        if (!outcome.succeeded) {
-            Log.w(TAG, "Workflow ${action.workflowId} not dispatched: ${outcome.message}")
-            return
-        }
-        Log.i(TAG, outcome.message)
+        // Show the 10-second countdown before executing. The countdown activity
+        // handles skip/cancel/dispatch internally.
+        WorkflowRunner.dispatchWithCountdown(context, action)
 
-        // The alarm is one-shot; re-arm for the next day.
+        // The alarm is one-shot; re-arm for the next day. If the user skipped,
+        // the countdown activity also re-arms — this is a safety net.
         reschedule(context, action.workflowId)
     }
 

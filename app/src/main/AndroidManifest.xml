@@ -45,6 +45,17 @@
             </intent-filter>
         </activity>
 
+        <!--
+          Countdown overlay shown before an automation executes. Not exported:
+          only our own SchedulerReceiver starts it.
+        -->
+        <activity
+            android:name=".ui.ExecutionCountdownActivity"
+            android:exported="false"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar"
+            android:launchMode="singleTop"
+            android:excludeFromRecents="true" />
+
         <service
             android:name=".service.AutomationAccessibility"
             android:exported="true"

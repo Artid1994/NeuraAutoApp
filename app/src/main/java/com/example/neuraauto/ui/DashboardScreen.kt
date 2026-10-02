@@ -7,7 +7,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -33,7 +35,7 @@ import com.example.neuraauto.data.WorkflowRepository
  * leave the badge stale.
  */
 val APP_VERSION_LABEL: String =
-    "NeuraAuto AI v${BuildConfig.VERSION_NAME} (Phase 3.2: Autonomous AI)"
+    "NeuraAuto AI v${BuildConfig.VERSION_NAME} (Phase 3.3: Interactive AI)"
 
 /** 28dp app icon, or a lettered placeholder when the app cannot be resolved. */
 @Composable
@@ -108,7 +110,7 @@ private fun AutonomousAiCard(
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
-                text = "🤖 Autonomous AI (Phase 3.2)",
+                text = "🤖 Autonomous AI (Phase 3.3)",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold
             )
@@ -223,7 +225,9 @@ fun DashboardScreen(
             state = state,
             onAnalyze = viewModel::analyze,
             onEnable = viewModel::enableWorkflow,
-            onDisable = viewModel::disableWorkflow
+            onDisable = viewModel::disableWorkflow,
+            onVerify = viewModel::verifyWorkflow,
+            onReject = viewModel::rejectWorkflow
         )
 
         AutonomousAiCard(
@@ -238,7 +242,9 @@ fun DashboardScreen(
         LearnedWorkflowCard(
             state = state,
             onEnable = viewModel::enableSequenceWorkflow,
-            onDisable = viewModel::disableWorkflow
+            onDisable = viewModel::disableWorkflow,
+            onVerify = viewModel::verifyWorkflow,
+            onReject = viewModel::rejectWorkflow
         )
 
         WorkflowManagementCard(
@@ -251,7 +257,9 @@ fun DashboardScreen(
                 }
             },
             onTestTrigger = viewModel::testTrigger,
-            onDismissTestResult = viewModel::clearTestResult
+            onDismissTestResult = viewModel::clearTestResult,
+            onEdit = viewModel::updateWorkflow,
+            onDelete = viewModel::deleteWorkflow
         )
     }
 }
@@ -310,7 +318,9 @@ private fun SmartRecommendationCard(
     state: DashboardUiState,
     onAnalyze: () -> Unit,
     onEnable: (String, Int) -> Unit,
-    onDisable: (AutomationWorkflow) -> Unit
+    onDisable: (AutomationWorkflow) -> Unit,
+    onVerify: (AutomationWorkflow) -> Unit,
+    onReject: (AutomationWorkflow) -> Unit
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
@@ -348,7 +358,9 @@ private fun SmartRecommendationCard(
                                 routine.hourOfDay
                             ),
                             onEnable = { onEnable(routine.packageName, routine.hourOfDay) },
-                            onDisable = onDisable
+                            onDisable = onDisable,
+                            onVerify = onVerify,
+                            onReject = onReject
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                     }
@@ -372,7 +384,9 @@ private fun RoutineRow(
     routine: RoutinePattern,
     enabledWorkflow: AutomationWorkflow?,
     onEnable: () -> Unit,
-    onDisable: (AutomationWorkflow) -> Unit
+    onDisable: (AutomationWorkflow) -> Unit,
+    onVerify: (AutomationWorkflow) -> Unit,
+    onReject: (AutomationWorkflow) -> Unit
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
         AppIdentity(packageName = routine.packageName)
@@ -405,6 +419,38 @@ private fun RoutineRow(
             OutlinedButton(onClick = onEnable, modifier = Modifier.fillMaxWidth()) {
                 Text("Enable Automation")
             }
+            Spacer(modifier = Modifier.height(4.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = {
+                        // Verify creates a workflow row if none exists yet
+                        val wf = enabledWorkflow ?: AutomationWorkflow(
+                            targetApp = routine.packageName,
+                            scheduledHour = routine.hourOfDay,
+                            scheduledMinute = 0,
+                            targetMessage = "NeuraAuto AI automated message"
+                        )
+                        onVerify(wf)
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Verify Pattern")
+                }
+                OutlinedButton(
+                    onClick = {
+                        val wf = enabledWorkflow ?: AutomationWorkflow(
+                            targetApp = routine.packageName,
+                            scheduledHour = routine.hourOfDay,
+                            scheduledMinute = 0,
+                            targetMessage = "NeuraAuto AI automated message"
+                        )
+                        onReject(wf)
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Reject")
+                }
+            }
         }
     }
 }
@@ -413,7 +459,9 @@ private fun RoutineRow(
 private fun LearnedWorkflowCard(
     state: DashboardUiState,
     onEnable: (ActionSequencePattern) -> Unit,
-    onDisable: (AutomationWorkflow) -> Unit
+    onDisable: (AutomationWorkflow) -> Unit,
+    onVerify: (AutomationWorkflow) -> Unit,
+    onReject: (AutomationWorkflow) -> Unit
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
@@ -445,7 +493,9 @@ private fun LearnedWorkflowCard(
                                 pattern.hourOfDay
                             ),
                             onEnable = { onEnable(pattern) },
-                            onDisable = onDisable
+                            onDisable = onDisable,
+                            onVerify = onVerify,
+                            onReject = onReject
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                     }
@@ -460,7 +510,9 @@ private fun SequenceRow(
     pattern: ActionSequencePattern,
     enabledWorkflow: AutomationWorkflow?,
     onEnable: () -> Unit,
-    onDisable: (AutomationWorkflow) -> Unit
+    onDisable: (AutomationWorkflow) -> Unit,
+    onVerify: (AutomationWorkflow) -> Unit,
+    onReject: (AutomationWorkflow) -> Unit
 ) {
     Surface(
         color = MaterialTheme.colorScheme.surfaceVariant,
@@ -509,6 +561,37 @@ private fun SequenceRow(
                 OutlinedButton(onClick = onEnable, modifier = Modifier.fillMaxWidth()) {
                     Text("Enable Automation")
                 }
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick = {
+                            val wf = enabledWorkflow ?: AutomationWorkflow(
+                                targetApp = pattern.packageName,
+                                scheduledHour = pattern.hourOfDay,
+                                scheduledMinute = 0,
+                                targetMessage = "NeuraAuto AI automated message"
+                            )
+                            onVerify(wf)
+                        },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Verify Pattern")
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            val wf = enabledWorkflow ?: AutomationWorkflow(
+                                targetApp = pattern.packageName,
+                                scheduledHour = pattern.hourOfDay,
+                                scheduledMinute = 0,
+                                targetMessage = "NeuraAuto AI automated message"
+                            )
+                            onReject(wf)
+                        },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Reject")
+                    }
+                }
             }
         }
     }
@@ -519,8 +602,12 @@ private fun WorkflowManagementCard(
     state: DashboardUiState,
     onToggle: (AutomationWorkflow, Boolean) -> Unit,
     onTestTrigger: (AutomationWorkflow) -> Unit,
-    onDismissTestResult: () -> Unit
+    onDismissTestResult: () -> Unit,
+    onEdit: (AutomationWorkflow) -> Unit,
+    onDelete: (AutomationWorkflow) -> Unit
 ) {
+    var editingWorkflow by remember { mutableStateOf<AutomationWorkflow?>(null) }
+
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
@@ -544,7 +631,9 @@ private fun WorkflowManagementCard(
                     WorkflowRow(
                         workflow = workflow,
                         onToggle = { active -> onToggle(workflow, active) },
-                        onTestTrigger = { onTestTrigger(workflow) }
+                        onTestTrigger = { onTestTrigger(workflow) },
+                        onEdit = { editingWorkflow = workflow },
+                        onDelete = { onDelete(workflow) }
                     )
                     HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                 }
@@ -572,13 +661,76 @@ private fun WorkflowManagementCard(
             }
         }
     }
+
+    editingWorkflow?.let { workflow ->
+        WorkflowEditDialog(
+            workflow = workflow,
+            onDismiss = { editingWorkflow = null },
+            onSave = { updated ->
+                onEdit(updated)
+                editingWorkflow = null
+            }
+        )
+    }
+}
+
+@Composable
+private fun WorkflowEditDialog(
+    workflow: AutomationWorkflow,
+    onDismiss: () -> Unit,
+    onSave: (AutomationWorkflow) -> Unit
+) {
+    var hour by remember { mutableStateOf(workflow.scheduledHour.toString()) }
+    var minute by remember { mutableStateOf(workflow.scheduledMinute.toString()) }
+    var message by remember { mutableStateOf(WorkflowRepository.messageOf(workflow)) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("แก้ไข Workflow") },
+        text = {
+            Column {
+                Text("เวลา (ชั่วโมง):", style = MaterialTheme.typography.bodySmall)
+                OutlinedTextField(
+                    value = hour,
+                    onValueChange = { hour = it.filter { c -> c.isDigit() }.take(2) },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text("เวลา (นาที):", style = MaterialTheme.typography.bodySmall)
+                OutlinedTextField(
+                    value = minute,
+                    onValueChange = { minute = it.filter { c -> c.isDigit() }.take(2) },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text("ข้อความ:", style = MaterialTheme.typography.bodySmall)
+                OutlinedTextField(
+                    value = message,
+                    onValueChange = { message = it },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                val h = hour.toIntOrNull()?.coerceIn(0, 23) ?: workflow.scheduledHour
+                val m = minute.toIntOrNull()?.coerceIn(0, 59) ?: workflow.scheduledMinute
+                onSave(workflow.copy(scheduledHour = h, scheduledMinute = m, targetMessage = message))
+            }) { Text("บันทึก") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("ยกเลิก") }
+        }
+    )
 }
 
 @Composable
 private fun WorkflowRow(
     workflow: AutomationWorkflow,
     onToggle: (Boolean) -> Unit,
-    onTestTrigger: () -> Unit
+    onTestTrigger: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
         Row(
@@ -612,6 +764,21 @@ private fun WorkflowRow(
             modifier = Modifier.fillMaxWidth()
         ) {
             Text("Test Trigger Now")
+        }
+        Spacer(modifier = Modifier.height(4.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(
+                onClick = onEdit,
+                modifier = Modifier.weight(1f)
+            ) {
+                Text("Edit")
+            }
+            OutlinedButton(
+                onClick = onDelete,
+                modifier = Modifier.weight(1f)
+            ) {
+                Text("Delete")
+            }
         }
     }
 }

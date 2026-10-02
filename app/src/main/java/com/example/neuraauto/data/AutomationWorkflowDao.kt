@@ -48,4 +48,16 @@ interface AutomationWorkflowDao {
 
     @Query("DELETE FROM automation_workflow WHERE id = :id")
     suspend fun delete(id: Long)
+
+    /** Full update preserving the row id. */
+    @Update
+    suspend fun updateWorkflow(workflow: AutomationWorkflow)
+
+    /** Mark a workflow as explicitly verified by the user. */
+    @Query("UPDATE automation_workflow SET isUserVerified = 1, isUserRejected = 0 WHERE id = :id")
+    suspend fun verifyWorkflow(id: Long)
+
+    /** Mark a workflow as explicitly rejected by the user. */
+    @Query("UPDATE automation_workflow SET isUserRejected = 1, isUserVerified = 0 WHERE id = :id")
+    suspend fun rejectWorkflow(id: Long)
 }

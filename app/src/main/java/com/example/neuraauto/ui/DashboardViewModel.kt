@@ -270,6 +270,63 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         _uiState.value = _uiState.value.copy(testResult = null)
     }
 
+    /** Mark a workflow as explicitly verified by the user. */
+    fun verifyWorkflow(workflow: AutomationWorkflow) {
+        viewModelScope.launch {
+            try {
+                workflowDao.verifyWorkflow(workflow.id)
+                Log.i(TAG, "Verified workflow ${workflow.id}")
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to verify workflow ${workflow.id}", e)
+            }
+        }
+    }
+
+    /** Mark a workflow as explicitly rejected by the user. */
+    fun rejectWorkflow(workflow: AutomationWorkflow) {
+        viewModelScope.launch {
+            try {
+                workflowDao.rejectWorkflow(workflow.id)
+                Log.i(TAG, "Rejected workflow ${workflow.id}")
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to reject workflow ${workflow.id}", e)
+            }
+        }
+    }
+
+    /** Delete a workflow permanently. */
+    fun deleteWorkflow(workflow: AutomationWorkflow) {
+        viewModelScope.launch {
+            try {
+                withContext(Dispatchers.IO) {
+                    WorkflowScheduler.cancel(getApplication(), workflow)
+                }
+                workflowDao.delete(workflow.id)
+                Log.i(TAG, "Deleted workflow ${workflow.id}")
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to delete workflow ${workflow.id}", e)
+            }
+        }
+    }
+
+    /** Update a workflow's fields (edit dialog). */
+    fun updateWorkflow(workflow: AutomationWorkflow) {
+        viewModelScope.launch {
+            try {
+                workflowDao.updateWorkflow(workflow)
+                val stored = workflowDao.byId(workflow.id) ?: return@launch
+                if (stored.isActive) {
+                    withContext(Dispatchers.IO) {
+                        WorkflowScheduler.schedule(getApplication(), stored)
+                    }
+                }
+                Log.i(TAG, "Updated workflow ${workflow.id}")
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to update workflow ${workflow.id}", e)
+            }
+        }
+    }
+
     private fun defaultMessageFor(packageName: String): String =
         if (packageName == LINE_PACKAGE) {
             "สวัสดีครับ ข้อความนี้ถูกส่งโดย NeuraAuto AI"

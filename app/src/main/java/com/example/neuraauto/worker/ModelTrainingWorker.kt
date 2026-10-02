@@ -99,9 +99,9 @@ class ModelTrainingWorker(
                         minute = 0
                     )
 
-                    // Never resurrect something the user switched off.
-                    if (slot != null && !slot.isActive) {
-                        Log.i(TAG, "Skipping ${pattern.packageName}@${pattern.hourOfDay}: user disabled it")
+                    // Never resurrect something the user switched off or rejected.
+                    if (slot != null && (!slot.isActive || slot.isUserRejected)) {
+                        Log.i(TAG, "Skipping ${pattern.packageName}@${pattern.hourOfDay}: user disabled/rejected it")
                         continue
                     }
 

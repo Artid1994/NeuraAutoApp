@@ -11,11 +11,12 @@ import androidx.room.RoomDatabase
  *   v1 — user_activity_log (Phase 2 activity capture)
  *   v2 — + automation_workflow (Phase 3 user-enabled automations)
  *   v3 — + in_app_action_log (Phase 3.1 in-app interaction sequences)
+ *   v4 — + isUserVerified, isUserRejected on automation_workflow (Phase 3.3)
  *
- * Each step only *adds* a table, so Room can generate the migrations itself;
- * [AutoMigration] is validated at compile time against the exported schemas in
- * `app/schemas/`, which means a mismatch fails the build instead of crashing at
- * runtime on upgrade. Existing rows are preserved.
+ * Each step only *adds* a table or column, so Room can generate the migrations
+ * itself; [AutoMigration] is validated at compile time against the exported
+ * schemas in `app/schemas/`, which means a mismatch fails the build instead of
+ * crashing at runtime on upgrade. Existing rows are preserved.
  */
 @Database(
     entities = [
@@ -23,11 +24,12 @@ import androidx.room.RoomDatabase
         AutomationWorkflow::class,
         InAppActionLog::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = true,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
-        AutoMigration(from = 2, to = 3)
+        AutoMigration(from = 2, to = 3),
+        AutoMigration(from = 3, to = 4)
     ]
 )
 abstract class AppDatabase : RoomDatabase() {

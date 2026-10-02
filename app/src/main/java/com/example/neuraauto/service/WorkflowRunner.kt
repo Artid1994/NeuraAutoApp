@@ -102,6 +102,20 @@ object WorkflowRunner {
     }
 
     /**
+     * Show the 10-second countdown, then dispatch if the user does not intervene.
+     *
+     * This is the path taken by alarm-triggered executions. The manual
+     * "Test Trigger Now" button calls [dispatch] directly, since the user has
+     * already chosen to run the workflow.
+     */
+    fun dispatchWithCountdown(
+        context: Context,
+        action: AutomationAction
+    ) {
+        com.example.neuraauto.ui.ExecutionCountdownActivity.start(context, action)
+    }
+
+    /**
      * Resolve a launcher intent for [packageName].
      *
      * `getLaunchIntentForPackage` is the normal route. Some apps do not expose a
