@@ -70,12 +70,12 @@ object SmartNodeFinder {
     fun looksLikeDialog(rootNode: AccessibilityNodeInfo): Boolean {
         var found = false
         walk(rootNode) { node ->
-            val className = node.className?.toString()?.lowercase() ?: return@walk
+            val className = node.className?.toString()?.lowercase().orEmpty()
             if (DIALOG_CLASS_HINTS.any { className.contains(it) }) {
                 found = true
-                false // stop
+                false // stop descending
             } else {
-                true
+                true // keep descending
             }
         }
         return found
