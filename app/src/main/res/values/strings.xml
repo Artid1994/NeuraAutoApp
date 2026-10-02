@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">NeuraAuto AI</string>
+    <string name="accessibility_service_description">NeuraAuto AI ใช้สิทธิ์นี้เพื่อสั่งงานอัตโนมัติแทนคุณ (เช่น ส่งข้อความ) เมื่อคุณเปิดใช้งาน</string>
+</resources>

@@ -12,7 +12,8 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -20,13 +21,17 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      # ติดตั้ง Gradle ในเครื่อง Cloud Runner โดยตรง
+      # Provides dependency/build caching. The build itself uses the committed
+      # wrapper so CI runs the exact Gradle version pinned in
+      # gradle/wrapper/gradle-wrapper.properties (8.4), matching local builds.
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
 
-      # สั่ง Build โดยใช้คำสั่ง gradle แทน ./gradlew
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
+
       - name: Build Debug APK
-        run: gradle assembleDebug --stacktrace
+        run: ./gradlew assembleDebug --stacktrace
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
