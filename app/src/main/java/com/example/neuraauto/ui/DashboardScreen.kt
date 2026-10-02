@@ -24,6 +24,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.neuraauto.BuildConfig
 import com.example.neuraauto.brain.ActionSequencePattern
 import com.example.neuraauto.brain.RoutinePattern
+import com.example.neuraauto.data.AppExclusionManager
 import com.example.neuraauto.data.AutomationSettings
 import com.example.neuraauto.data.AutomationWorkflow
 import com.example.neuraauto.data.WorkflowRepository
@@ -35,7 +36,7 @@ import com.example.neuraauto.data.WorkflowRepository
  * leave the badge stale.
  */
 val APP_VERSION_LABEL: String =
-    "NeuraAuto AI v${BuildConfig.VERSION_NAME} (Phase 3.4: Long-Term Memory)"
+    "NeuraAuto AI v${BuildConfig.VERSION_NAME} (Phase 3.5: Smart Filtering)"
 
 /** 28dp app icon, or a lettered placeholder when the app cannot be resolved. */
 @Composable
@@ -110,7 +111,7 @@ private fun AutonomousAiCard(
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
-                text = "🤖 Autonomous AI (Phase 3.4)",
+                text = "🤖 Autonomous AI (Phase 3.5)",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold
             )
@@ -261,6 +262,8 @@ fun DashboardScreen(
             onEdit = viewModel::updateWorkflow,
             onDelete = viewModel::deleteWorkflow
         )
+
+        AppExclusionSettingsCard()
     }
 }
 
@@ -722,6 +725,94 @@ private fun WorkflowEditDialog(
             TextButton(onClick = onDismiss) { Text("ยกเลิก") }
         }
     )
+}
+
+@Composable
+private fun AppExclusionSettingsCard() {
+    val context = LocalContext.current
+    var bankingExcluded by remember { mutableStateOf(AppExclusionManager.isCategoryExcluded(context, AppExclusionManager.CATEGORY_BANKING)) }
+    var mediaExcluded by remember { mutableStateOf(AppExclusionManager.isCategoryExcluded(context, AppExclusionManager.CATEGORY_MEDIA)) }
+    var systemExcluded by remember { mutableStateOf(AppExclusionManager.isCategoryExcluded(context, AppExclusionManager.CATEGORY_SYSTEM)) }
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = "🚫 App Exclusion Settings",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "เลือกประเภทแอปที่ไม่ต้การให้ระบบเรียนรู้",
+                style = MaterialTheme.typography.bodySmall
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Banking / Finance", fontWeight = FontWeight.SemiBold)
+                    Text(
+                        text = if (bankingExcluded) "Excluded" else "Learning enabled",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+                Switch(
+                    checked = bankingExcluded,
+                    onCheckedChange = {
+                        bankingExcluded = it
+                        AppExclusionManager.setCategoryExcluded(context, AppExclusionManager.CATEGORY_BANKING, it)
+                    }
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Media / Entertainment", fontWeight = FontWeight.SemiBold)
+                    Text(
+                        text = if (mediaExcluded) "Excluded" else "Learning enabled",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+                Switch(
+                    checked = mediaExcluded,
+                    onCheckedChange = {
+                        mediaExcluded = it
+                        AppExclusionManager.setCategoryExcluded(context, AppExclusionManager.CATEGORY_MEDIA, it)
+                    }
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("System Settings", fontWeight = FontWeight.SemiBold)
+                    Text(
+                        text = if (systemExcluded) "Excluded" else "Learning enabled",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+                Switch(
+                    checked = systemExcluded,
+                    onCheckedChange = {
+                        systemExcluded = it
+                        AppExclusionManager.setCategoryExcluded(context, AppExclusionManager.CATEGORY_SYSTEM, it)
+                    }
+                )
+            }
+        }
+    }
 }
 
 @Composable

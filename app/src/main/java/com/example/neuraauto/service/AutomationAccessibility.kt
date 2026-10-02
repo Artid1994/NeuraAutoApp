@@ -15,6 +15,7 @@ import com.example.neuraauto.brain.ActionStepKind
 import com.example.neuraauto.data.ActionSequenceTracker
 import com.example.neuraauto.data.ActivityRecorder
 import com.example.neuraauto.data.AppDatabase
+import com.example.neuraauto.data.AppExclusionManager
 import com.example.neuraauto.data.InAppActionLog
 import com.example.neuraauto.data.InAppActionRecorder
 
@@ -304,6 +305,7 @@ class AutomationAccessibility : AccessibilityService() {
         val packageName = event.packageName?.toString() ?: return
         if (packageName == applicationContext.packageName) return
         if (packageName == SYSTEM_UI_PACKAGE) return
+        if (AppExclusionManager.isPackageExcluded(applicationContext, packageName)) return
 
         // Do not learn from our own automation. While an action is pending for
         // this package, the events being emitted are the ones WE caused; storing
@@ -349,6 +351,7 @@ class AutomationAccessibility : AccessibilityService() {
         val packageName = event.packageName?.toString() ?: return
         if (packageName == applicationContext.packageName) return
         if (packageName == SYSTEM_UI_PACKAGE) return
+        if (AppExclusionManager.isPackageExcluded(applicationContext, packageName)) return
 
         ActivityRecorder.record(dao, packageName) { readAmbientState() }
     }

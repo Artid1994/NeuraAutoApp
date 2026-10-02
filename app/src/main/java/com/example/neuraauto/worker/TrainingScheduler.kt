@@ -52,4 +52,27 @@ object TrainingScheduler {
     }
 
     private const val IMMEDIATE_WORK_NAME = "NeuraAuto_OnDevice_Training_Now"
+
+    /**
+     * Adaptive high-frequency training for unverified patterns.
+     *
+     * When new patterns are detected with confidence < 0.8, schedule
+     * background passes every 15-30 minutes. Once confidence hits 0.8 or
+     * becomes locked, drop to standard daily runs.
+     *
+     * Uses a separate unique work name so it does not disturb the periodic
+     * schedule. REPLACE so repeated calls collapse into one queued run.
+     */
+    fun scheduleAdaptiveTraining(context: Context, unverifiedCount: Int) {
+        val request = OneTimeWorkRequestBuilder<ModelTrainingWorker>()
+            .setInitialDelay(15, TimeUnit.MINUTES)
+            .build()
+        WorkManager.getInstance(context).enqueueUniqueWork(
+            ADAPTIVE_WORK_NAME,
+            ExistingWorkPolicy.REPLACE,
+            request
+        )
+    }
+
+    private const val ADAPTIVE_WORK_NAME = "NeuraAuto_OnDevice_Training_Adaptive"
 }

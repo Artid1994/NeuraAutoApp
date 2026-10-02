@@ -71,6 +71,9 @@ object WorkflowRunner {
      *
      * Nothing is queued unless a launcher activity is successfully started, so a
      * failed launch cannot leave a stale action behind that would fire later.
+     *
+     * Context-aware skip: if the target app is already in the foreground,
+     * execution is skipped gracefully to avoid interrupting the active user.
      */
     fun dispatch(context: Context, action: AutomationAction): LaunchOutcome {
         val rawPackage = action.targetPackage
@@ -78,6 +81,15 @@ object WorkflowRunner {
             ?: return LaunchOutcome.InvalidPackage(
                 "Invalid package name: '$rawPackage'"
             )
+
+        // Context-aware skip: if the target app is already in the foreground,
+        // skip execution gracefully to avoid interrupting the active user.
+        if (isAppInForeground(context, packageName)) {
+            Log.i(TAG, "Skipping dispatch: $packageName is already in the foreground")
+            return LaunchOutcome.Launched(
+                "Skipped: $packageName is already in the foreground"
+            )
+        }
 
         val launchIntent = resolveLaunchIntent(context.packageManager, packageName)
             ?: return LaunchOutcome.NotResolved(
@@ -98,6 +110,25 @@ object WorkflowRunner {
         } catch (e: Exception) {
             Log.w(TAG, "startActivity failed for $packageName", e)
             LaunchOutcome.Failed("Failed to launch $packageName: ${e.javaClass.simpleName}")
+        }
+    }
+
+    /**
+     * Check whether the given package is currently in the foreground.
+     *
+     * Uses AccessibilityService to get the current window's package name.
+     * Returns false if the service is not available or the package cannot
+     * be determined.
+     */
+    private fun isAppInForeground(context: Context, packageName: String): Boolean {
+        val service = AutomationAccessibility.instance ?: return false
+        return try {
+            val rootNode = service.rootInActiveWindow ?: return false
+            val currentPackage = rootNode.packageName?.toString() ?: return false
+            currentPackage == packageName
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to check foreground package", e)
+            false
         }
     }
 

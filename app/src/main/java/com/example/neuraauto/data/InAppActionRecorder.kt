@@ -48,8 +48,10 @@ object InAppActionRecorder {
         packageName: String,
         eventType: String,
         viewId: String?,
-        rawText: String?
+        rawText: String?,
+        isExcluded: (String) -> Boolean = { false }
     ) {
+        if (isExcluded(packageName)) return
         val now = System.currentTimeMillis()
         val group = ActionSequenceTracker.next(packageName, now) ?: return
 

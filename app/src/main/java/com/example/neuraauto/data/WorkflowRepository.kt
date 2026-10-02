@@ -48,6 +48,34 @@ object WorkflowRepository {
     }
 
     /**
+     * Find an existing workflow that matches the same target app and is
+     * scheduled within ±15 minutes of the given time.
+     *
+     * Used by the deduplication logic to merge new patterns into existing
+     * workflow rows instead of creating duplicates.
+     */
+    suspend fun findNearby(
+        dao: AutomationWorkflowDao,
+        packageName: String,
+        hour: Int,
+        minute: Int,
+        toleranceMinutes: Int = 15
+    ): AutomationWorkflow? {
+        val targetMinutes = hour * 60 + minute
+        val all = dao.activeWorkflows()
+        return all
+            .filter { it.targetApp == packageName }
+            .minByOrNull { workflow ->
+                val workflowMinutes = workflow.scheduledHour * 60 + workflow.scheduledMinute
+                kotlin.math.abs(workflowMinutes - targetMinutes)
+            }
+            ?.takeIf { workflow ->
+                val workflowMinutes = workflow.scheduledHour * 60 + workflow.scheduledMinute
+                kotlin.math.abs(workflowMinutes - targetMinutes) <= toleranceMinutes
+            }
+    }
+
+    /**
      * Encode a learned step list for storage.
      *
      * The step list is appended to the message behind a control-character

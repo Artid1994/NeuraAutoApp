@@ -13,6 +13,7 @@ import com.example.neuraauto.data.AutomationSettings
 import com.example.neuraauto.data.AutomationWorkflow
 import com.example.neuraauto.data.WorkflowRepository
 import com.example.neuraauto.service.WorkflowScheduler
+import com.example.neuraauto.worker.TrainingScheduler
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -98,6 +99,19 @@ class ModelTrainingWorker(
                 for (pattern in patterns) {
                     if (autoEnabled >= MAX_AUTO_ENABLES_PER_RUN) break
 
+                    // Deduplication: check for existing workflow within ±15 min
+                    val nearby = WorkflowRepository.findNearby(
+                        dao = workflowDao,
+                        packageName = pattern.packageName,
+                        hour = pattern.hourOfDay,
+                        minute = 0,
+                        toleranceMinutes = 15
+                    )
+                    if (nearby != null) {
+                        Log.i(TAG, "Skipping ${pattern.packageName}@${pattern.hourOfDay}: nearby workflow ${nearby.id} exists")
+                        continue
+                    }
+
                     val slot = workflowDao.findBySlot(
                         packageName = pattern.packageName,
                         hour = pattern.hourOfDay,
@@ -135,6 +149,23 @@ class ModelTrainingWorker(
                 }
             } else if (patterns.isNotEmpty()) {
                 Log.i(TAG, "Auto-enable is switched off; ${patterns.size} pattern(s) left for the user")
+            }
+
+            // ── 4. adaptive high-frequency training ─────────────────────────
+            // For unverified/new patterns with confidence < 0.8, schedule
+            // background passes every 15-30 minutes. Once confidence hits 0.8
+            // or becomes locked, drop to standard daily runs.
+            val unverifiedPatterns = patterns.filter { pattern ->
+                val slot = workflowDao.findBySlot(
+                    packageName = pattern.packageName,
+                    hour = pattern.hourOfDay,
+                    minute = 0
+                )
+                pattern.confidence < 0.8f && (slot == null || !slot.isLocked)
+            }
+            if (unverifiedPatterns.isNotEmpty()) {
+                TrainingScheduler.scheduleAdaptiveTraining(applicationContext, unverifiedPatterns.size)
+                Log.i(TAG, "Scheduled adaptive training for ${unverifiedPatterns.size} unverified pattern(s)")
             }
 
             AutomationSettings.recordTrainingRun(
