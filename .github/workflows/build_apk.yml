@@ -38,3 +38,16 @@ jobs:
         with:
           name: NeuraAuto-AI-Debug-APK
           path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: warn
+
+      # Room writes the exported schema JSON here during kspDebugKotlin. It runs
+      # even when a later task fails, and the files are needed as the baseline
+      # for the next auto-migration — the v2 schema was lost this way once, so
+      # it is now published on every run.
+      - name: Upload Room schemas
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: NeuraAuto-Room-Schemas
+          path: app/schemas
+          if-no-files-found: warn
