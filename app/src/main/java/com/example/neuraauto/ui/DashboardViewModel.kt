@@ -8,6 +8,8 @@ import com.example.neuraauto.brain.BrainAnalysis
 import com.example.neuraauto.brain.NeuralBrainEngine
 import com.example.neuraauto.data.AppDatabase
 import com.example.neuraauto.data.AutomationWorkflow
+import com.example.neuraauto.service.AutomationAction
+import com.example.neuraauto.service.WorkflowRunner
 import com.example.neuraauto.service.WorkflowScheduler
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -21,8 +23,12 @@ data class DashboardUiState(
     val logCount: Int = 0,
     val analysis: BrainAnalysis? = null,
     val isAnalyzing: Boolean = false,
-    val workflows: List<AutomationWorkflow> = emptyList()
+    val workflows: List<AutomationWorkflow> = emptyList(),
+    /** Transient feedback from "Test Trigger Now". */
+    val testResult: String? = null
 ) {
+    val activeWorkflows: List<AutomationWorkflow> get() = workflows.filter { it.isActive }
+
     fun workflowFor(packageName: String, hourOfDay: Int): AutomationWorkflow? =
         workflows.firstOrNull {
             it.targetApp == packageName &&
@@ -111,6 +117,59 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 Log.w(TAG, "Failed to disable workflow ${workflow.id}", e)
             }
         }
+    }
+
+    /** Re-enable a previously disabled workflow. */
+    fun enableExistingWorkflow(workflow: AutomationWorkflow) {
+        viewModelScope.launch {
+            try {
+                workflowDao.setActive(workflow.id, true)
+                val stored = workflowDao.byId(workflow.id) ?: return@launch
+                withContext(Dispatchers.IO) {
+                    WorkflowScheduler.schedule(getApplication(), stored)
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to re-enable workflow ${workflow.id}", e)
+            }
+        }
+    }
+
+    /**
+     * Fire a workflow immediately, for manual verification.
+     *
+     * Uses [WorkflowRunner] — the same dispatch the alarm path uses — so a
+     * successful test genuinely exercises the execution engine.
+     */
+    fun testTrigger(workflow: AutomationWorkflow) {
+        viewModelScope.launch {
+            val action = AutomationAction(
+                workflowId = workflow.id,
+                targetPackage = workflow.targetApp,
+                actionType = AutomationAction.ACTION_SEND_MESSAGE,
+                message = workflow.targetMessage
+            )
+            val dispatched = try {
+                withContext(Dispatchers.Main) {
+                    WorkflowRunner.dispatch(getApplication(), action)
+                }
+            } catch (e: Exception) {
+                // startActivity from a non-activity context can throw on some OEMs.
+                Log.w(TAG, "Test trigger failed for ${workflow.targetApp}", e)
+                false
+            }
+            _uiState.value = _uiState.value.copy(
+                testResult = if (dispatched) {
+                    "ส่งคำสั่งไปที่ ${workflow.targetApp} แล้ว — ตรวจสอบว่าแอปเปิดและข้อความถูกส่ง"
+                } else {
+                    "ไม่พบแอป ${workflow.targetApp} ในเครื่องนี้"
+                }
+            )
+        }
+    }
+
+    /** Clear the test feedback banner. */
+    fun clearTestResult() {
+        _uiState.value = _uiState.value.copy(testResult = null)
     }
 
     private fun defaultMessageFor(packageName: String): String =

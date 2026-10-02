@@ -41,17 +41,12 @@ class SchedulerReceiver : BroadcastReceiver() {
             return
         }
 
-        // In-process handoff to the accessibility service.
-        AutomationAccessibility.pendingAction = action
-
-        val launchIntent = context.packageManager
-            .getLaunchIntentForPackage(action.targetPackage)
-        if (launchIntent == null) {
+        // Same dispatch path the manual "Test Trigger Now" button uses.
+        val dispatched = WorkflowRunner.dispatch(context, action)
+        if (!dispatched) {
             Log.w(TAG, "Target package ${action.targetPackage} is not installed")
             return
         }
-        launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        context.startActivity(launchIntent)
 
         // The alarm is one-shot; re-arm for the next day.
         reschedule(context, action.workflowId)
