@@ -68,6 +68,16 @@ class AutomationAccessibility : AccessibilityService() {
      */
     private fun tryExecutePendingAction(event: AccessibilityEvent) {
         val action = pendingAction ?: return
+
+        // Never replay a stale alarm: the accessibility service may have been
+        // disconnected when it fired, and executing it much later would drive
+        // the UI at an unintended moment.
+        if (action.isExpired()) {
+            Log.w(TAG, "Discarding expired action for ${action.targetPackage}")
+            clearPendingAction()
+            return
+        }
+
         val foregroundPackage = event.packageName?.toString() ?: return
         if (foregroundPackage != action.targetPackage) return
 
