@@ -19,13 +19,14 @@ jobs:
         with:
           java-version: '17'
           distribution: 'temurin'
-          cache: 'gradle'
 
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew || true
+      # ติดตั้ง Gradle ในเครื่อง Cloud Runner โดยตรง
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
 
+      # สั่ง Build โดยใช้คำสั่ง gradle แทน ./gradlew
       - name: Build Debug APK
-        run: ./gradlew assembleDebug --stacktrace
+        run: gradle assembleDebug --stacktrace
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
