@@ -1,5 +1,6 @@
 package com.example.neuraauto.data
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
@@ -40,9 +41,20 @@ data class UserActivityLog(
     /**
      * SSID of the connected Wi-Fi network, or null when not on Wi-Fi or the
      * platform refused the read (see [AmbientState.wifiSsid]).
+     *
+     * Nullable, so the v5→v6 migration needs no SQL default: existing rows
+     * simply read back NULL, which the feature hasher treats as "unknown".
      */
     val wifiSsid: String? = null,
 
-    /** Battery percentage 0..100 at capture time, or -1 when unavailable. */
+    /**
+     * Battery percentage 0..100 at capture time, or -1 when unavailable.
+     *
+     * NOT NULL, so the v5→v6 auto-migration requires an explicit SQL default;
+     * without it Room refuses the migration at compile time. The Kotlin
+     * default is not enough — Kotlin defaults are a constructor concern, the
+     * SQL default is what existing rows receive.
+     */
+    @ColumnInfo(defaultValue = "-1")
     val batteryPercent: Int = -1
 )
