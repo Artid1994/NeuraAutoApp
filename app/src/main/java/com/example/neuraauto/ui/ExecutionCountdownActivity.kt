@@ -14,6 +14,9 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
 import com.example.neuraauto.service.WorkflowScheduler
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 /**
  * Full-screen countdown shown before an automation actually executes.
@@ -133,18 +136,18 @@ class ExecutionCountdownActivity : Activity() {
         timer?.cancel()
         Log.i(TAG, "User skipped ${action.targetPackage} for today")
 
-        Thread {
+        CoroutineScope(Dispatchers.IO).launch {
             try {
-                val workflow = com.example.neuraauto.data.AppDatabase.getInstance(this)
+                val workflow = com.example.neuraauto.data.AppDatabase.getInstance(this@ExecutionCountdownActivity)
                     .automationWorkflowDao()
                     .byId(action.workflowId)
                 if (workflow != null && workflow.isActive) {
-                    WorkflowScheduler.schedule(this, workflow)
+                    WorkflowScheduler.schedule(this@ExecutionCountdownActivity, workflow)
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "Failed to re-arm after skip", e)
             }
-        }.start()
+        }
         finish()
     }
 
@@ -155,19 +158,19 @@ class ExecutionCountdownActivity : Activity() {
         timer?.cancel()
         Log.i(TAG, "User cancelled workflow ${action.workflowId}")
 
-        Thread {
+        CoroutineScope(Dispatchers.IO).launch {
             try {
-                val dao = com.example.neuraauto.data.AppDatabase.getInstance(this)
+                val dao = com.example.neuraauto.data.AppDatabase.getInstance(this@ExecutionCountdownActivity)
                     .automationWorkflowDao()
                 dao.setActive(action.workflowId, false)
                 val workflow = dao.byId(action.workflowId)
                 if (workflow != null) {
-                    WorkflowScheduler.cancel(this, workflow)
+                    WorkflowScheduler.cancel(this@ExecutionCountdownActivity, workflow)
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "Failed to cancel workflow", e)
             }
-        }.start()
+        }
         finish()
     }
 
