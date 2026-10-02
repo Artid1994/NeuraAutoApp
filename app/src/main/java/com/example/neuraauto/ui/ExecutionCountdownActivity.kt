@@ -35,6 +35,7 @@ class ExecutionCountdownActivity : Activity() {
 
     private var timer: CountDownTimer? = null
     private var resolved = false
+    private var voice: VoiceFeedbackController? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -57,6 +58,27 @@ class ExecutionCountdownActivity : Activity() {
             Log.w(TAG, "Countdown started without a payload; finishing")
             finish()
             return
+        }
+
+        // ── Phase 4.3: voice feedback + commands ──────────────────────────
+        voice = VoiceFeedbackController(this) { command ->
+            runOnUiThread {
+                when (command) {
+                    VoiceFeedbackController.Command.SKIP -> {
+                        voice?.speak("ข้ามการทำงานวันนี้")
+                        skipToday(action)
+                    }
+
+                    VoiceFeedbackController.Command.SEND_NOW -> {
+                        voice?.speak("ส่งทันที")
+                        sendNow(action)
+                    }
+                }
+            }
+        }.also {
+            it.initTts()
+            it.speak("กำลังจะส่งข้อความอัตโนมัติในสิบวินาที พูดว่าส่งเลย หรือ ข้าม")
+            it.startListening()
         }
 
         val root = LinearLayout(this).apply {
@@ -97,17 +119,36 @@ class ExecutionCountdownActivity : Activity() {
             text = "ยกเลิก (Cancel)"
             setOnClickListener { cancelWorkflow(action) }
         }
+        val sendNow = Button(this).apply {
+            text = "ส่งเลย (Send Now)"
+            setOnClickListener { sendNow(action) }
+        }
+        val hint = TextView(this).apply {
+            text = "พูดว่า \"ส่งเลย\" เพื่อส่งทันที หรือ \"ข้าม\" เพื่อข้ามวันนี้"
+            textSize = 12f
+            setTextColor(0xFF9E9E9E.toInt())
+            gravity = Gravity.CENTER
+        }
 
         root.addView(title)
         root.addView(detail)
         root.addView(countdown)
+        root.addView(sendNow)
         root.addView(skip)
         root.addView(cancel)
+        root.addView(hint)
         setContentView(root)
 
         timer = object : CountDownTimer(COUNTDOWN_SECONDS * 1000L, 1000L) {
             override fun onTick(millisUntilFinished: Long) {
-                countdown.text = (millisUntilFinished / 1000L).toString()
+                val secondsLeft = millisUntilFinished / 1000L
+                countdown.text = secondsLeft.toString()
+                // One spoken warning, not a countdown on every tick — ten
+                // utterances in a row would be noise, and the last one would
+                // still be talking when the action fires.
+                if (secondsLeft == 3L) {
+                    voice?.speak("สามวินาที")
+                }
             }
 
             override fun onFinish() {
@@ -123,6 +164,20 @@ class ExecutionCountdownActivity : Activity() {
     /** Hand the action to the shared dispatch path and close. */
     private fun dispatchNow(action: com.example.neuraauto.service.AutomationAction) {
         com.example.neuraauto.service.WorkflowRunner.dispatch(this, action)
+    }
+
+    /**
+     * Send immediately, skipping the rest of the countdown.
+     *
+     * Reached by the "Send Now" button and by the spoken "ส่งเลย" command.
+     */
+    private fun sendNow(action: com.example.neuraauto.service.AutomationAction) {
+        if (resolved) return
+        resolved = true
+        timer?.cancel()
+        Log.i(TAG, "User chose to send now for ${action.targetPackage}")
+        dispatchNow(action)
+        finish()
     }
 
     /**
@@ -176,6 +231,8 @@ class ExecutionCountdownActivity : Activity() {
 
     override fun onDestroy() {
         timer?.cancel()
+        voice?.shutdown()
+        voice = null
         super.onDestroy()
     }
 

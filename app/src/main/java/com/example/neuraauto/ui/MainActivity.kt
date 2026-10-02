@@ -15,6 +15,13 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Phase 4.3 — voice commands need RECORD_AUDIO. Asked here, from a
+        // normal user-initiated screen, rather than from the countdown overlay
+        // (which appears on top of whatever the user was doing). Denial is
+        // fine: the countdown falls back to button-only control.
+        VoiceFeedbackController.requestAudioPermission(this, AUDIO_PERMISSION_REQUEST)
+
         setContent {
             MaterialTheme {
                 Surface(
@@ -38,5 +45,9 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    companion object {
+        private const val AUDIO_PERMISSION_REQUEST = 1001
     }
 }

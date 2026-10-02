@@ -12,6 +12,12 @@
       simply null (treated as an "unknown network" bucket); nothing breaks.
     -->
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <!--
+      Voice commands during the countdown ("ส่งเลย" / "ข้าม"). Runtime-requested
+      from the dashboard; when denied the countdown is simply silent and the
+      buttons remain the only control.
+    -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <!-- Alarms are cleared on reboot, so the schedule is restored at boot. -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
@@ -30,6 +36,14 @@
         <intent>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+        <!--
+          Android 11+ package visibility for speech recognition. Without this
+          SpeechRecognizer.isRecognitionAvailable() reports false and voice
+          commands silently never start.
+        -->
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
         </intent>
     </queries>
 
