@@ -42,11 +42,12 @@ class SchedulerReceiver : BroadcastReceiver() {
         }
 
         // Same dispatch path the manual "Test Trigger Now" button uses.
-        val dispatched = WorkflowRunner.dispatch(context, action)
-        if (!dispatched) {
-            Log.w(TAG, "Target package ${action.targetPackage} is not installed")
+        val outcome = WorkflowRunner.dispatch(context, action)
+        if (!outcome.succeeded) {
+            Log.w(TAG, "Workflow ${action.workflowId} not dispatched: ${outcome.message}")
             return
         }
+        Log.i(TAG, outcome.message)
 
         // The alarm is one-shot; re-arm for the next day.
         reschedule(context, action.workflowId)

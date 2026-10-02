@@ -9,6 +9,7 @@ import com.example.neuraauto.brain.NeuralBrainEngine
 import com.example.neuraauto.data.AppDatabase
 import com.example.neuraauto.data.AutomationWorkflow
 import com.example.neuraauto.service.AutomationAction
+import com.example.neuraauto.service.LaunchOutcome
 import com.example.neuraauto.service.WorkflowRunner
 import com.example.neuraauto.service.WorkflowScheduler
 import kotlinx.coroutines.Dispatchers
@@ -148,22 +149,18 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 actionType = AutomationAction.ACTION_SEND_MESSAGE,
                 message = workflow.targetMessage
             )
-            val dispatched = try {
+            val outcome = try {
                 withContext(Dispatchers.Main) {
                     WorkflowRunner.dispatch(getApplication(), action)
                 }
             } catch (e: Exception) {
                 // startActivity from a non-activity context can throw on some OEMs.
                 Log.w(TAG, "Test trigger failed for ${workflow.targetApp}", e)
-                false
+                LaunchOutcome.Failed(
+                    "Failed to launch ${workflow.targetApp}: ${e.javaClass.simpleName}"
+                )
             }
-            _uiState.value = _uiState.value.copy(
-                testResult = if (dispatched) {
-                    "ส่งคำสั่งไปที่ ${workflow.targetApp} แล้ว — ตรวจสอบว่าแอปเปิดและข้อความถูกส่ง"
-                } else {
-                    "ไม่พบแอป ${workflow.targetApp} ในเครื่องนี้"
-                }
-            )
+            _uiState.value = _uiState.value.copy(testResult = outcome.message)
         }
     }
 

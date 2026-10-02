@@ -12,8 +12,8 @@ android {
         applicationId = "com.example.neuraauto"
         minSdk = 26
         targetSdk = 35
-        versionCode = 3
-        versionName = "3.0.0-phase3"
+        versionCode = 4
+        versionName = "3.0.1-phase3-fix"
     }
 
     buildTypes {
@@ -31,6 +31,9 @@ android {
     }
     buildFeatures {
         compose = true
+        // Generates BuildConfig.VERSION_NAME so the UI badge cannot drift from
+        // versionName in the android block.
+        buildConfig = true
     }
     composeOptions {
         kotlinCompilerExtensionVersion = "1.5.8"

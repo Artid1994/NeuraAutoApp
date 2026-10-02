@@ -13,11 +13,18 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.neuraauto.BuildConfig
 import com.example.neuraauto.brain.RoutinePattern
 import com.example.neuraauto.data.AutomationWorkflow
 
-/** Shown in the header so a build's phase is obvious at a glance. */
-const val APP_VERSION_LABEL = "NeuraAuto AI v3.0.0 (Phase 3: Execution Engine)"
+/**
+ * Shown in the header so a build's phase is obvious at a glance.
+ *
+ * Derived from versionName rather than hardcoded, so a version bump cannot
+ * leave the badge stale.
+ */
+val APP_VERSION_LABEL: String =
+    "NeuraAuto AI v${BuildConfig.VERSION_NAME} (Phase 3: Execution Engine)"
 
 @Composable
 fun DashboardScreen(

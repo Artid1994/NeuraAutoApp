@@ -10,6 +10,24 @@
     <!-- Alarms are cleared on reboot, so the schedule is restored at boot. -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
+    <!--
+      Android 11+ (API 30+) package visibility.
+
+      Without these declarations getLaunchIntentForPackage() and
+      queryIntentActivities() return null for apps we do not own, so an
+      automation would report "package not found" even when the target is
+      installed. The <package> entry grants visibility for the known target;
+      the <intent> entry allows resolving any MAIN/LAUNCHER activity, which is
+      what the fallback launcher path needs.
+    -->
+    <queries>
+        <package android:name="com.linecorp.line" />
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
+
     <application
         android:name=".NeuraAutoApp"
         android:allowBackup="true"
