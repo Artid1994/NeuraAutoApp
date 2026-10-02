@@ -237,8 +237,10 @@ class AutomationAccessibility : AccessibilityService() {
 
     /**
      * Locate the message input. Uses the known view id when present, otherwise
-     * falls back to the first editable, non-password field in the hierarchy so
-     * the engine is not hard-wired to one app's internal resource names.
+     * falls back to intent-based matching (text/contentDescription such as
+     * "พิมพ์" / "type"), and finally to the first editable, non-password field
+     * in the hierarchy so the engine is not hard-wired to one app's internal
+     * resource names.
      */
     private fun findInputNodes(
         rootNode: AccessibilityNodeInfo,
@@ -249,6 +251,14 @@ class AutomationAccessibility : AccessibilityService() {
             val nodes = rootNode.findAccessibilityNodeInfosByViewId(viewId)
             if (!nodes.isNullOrEmpty()) return nodes
         }
+
+        // Phase 4.0 — view id failed; try to resolve the field by intent.
+        val byIntent = SmartNodeFinder.findInputByIntent(rootNode)
+        if (byIntent != null) {
+            Log.i(TAG, "Resolved input via SmartNodeFinder for $targetPackage")
+            return listOf(byIntent)
+        }
+
         val fallback = mutableListOf<AccessibilityNodeInfo>()
         collectEditableNodes(rootNode, fallback)
         return fallback
@@ -262,7 +272,13 @@ class AutomationAccessibility : AccessibilityService() {
             val nodes = rootNode.findAccessibilityNodeInfosByViewId(viewId)
             if (!nodes.isNullOrEmpty()) return nodes.first()
         }
-        return null
+
+        // Phase 4.0 — view id failed; match on what the button says.
+        val byIntent = SmartNodeFinder.findByIntent(rootNode, SmartNodeFinder.SEND_INTENTS)
+        if (byIntent != null) {
+            Log.i(TAG, "Resolved send button via SmartNodeFinder for $targetPackage")
+        }
+        return byIntent
     }
 
     /** View ids known to work for supported targets. */

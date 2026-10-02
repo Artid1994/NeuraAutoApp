@@ -36,7 +36,7 @@ import com.example.neuraauto.data.WorkflowRepository
  * leave the badge stale.
  */
 val APP_VERSION_LABEL: String =
-    "NeuraAuto AI v${BuildConfig.VERSION_NAME} (Phase 3.5: Smart Filtering)"
+    "NeuraAuto AI v${BuildConfig.VERSION_NAME} (Phase 4.0: Screen Vision)"
 
 /** 28dp app icon, or a lettered placeholder when the app cannot be resolved. */
 @Composable
@@ -111,7 +111,7 @@ private fun AutonomousAiCard(
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
-                text = "🤖 Autonomous AI (Phase 3.5)",
+                text = "🤖 Autonomous AI (Phase 4.0)",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold
             )
