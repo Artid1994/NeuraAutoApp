@@ -302,12 +302,10 @@ object WorkflowRunner {
         }
     }
 
-    private companion object {
-        const val SETTING_WIFI = Settings.ACTION_WIFI_SETTINGS
-        const val SETTING_BLUETOOTH = Settings.ACTION_BLUETOOTH_SETTINGS
-        const val SETTING_DND = Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS
-        const val SETTING_AIRPLANE = Settings.ACTION_AIRPLANE_MODE_SETTINGS
-    }
+    private const val SETTING_WIFI = Settings.ACTION_WIFI_SETTINGS
+    private const val SETTING_BLUETOOTH = Settings.ACTION_BLUETOOTH_SETTINGS
+    private const val SETTING_DND = Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS
+    private const val SETTING_AIRPLANE = Settings.ACTION_AIRPLANE_MODE_SETTINGS
 
     /**
      * Resolve a launcher intent for [packageName].

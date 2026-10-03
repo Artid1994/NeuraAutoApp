@@ -411,8 +411,6 @@ object ThaiIntentParser {
             .firstOrNull { lower.contains(it.lowercase()) }
     }
 
-    private companion object {
-        /** App used when the user says "ส่งข้อความ" without naming one. */
-        const val DEFAULT_APP_NAME = "ไลน์"
-    }
+    /** App used when the user says "ส่งข้อความ" without naming one. */
+    private const val DEFAULT_APP_NAME = "ไลน์"
 }
