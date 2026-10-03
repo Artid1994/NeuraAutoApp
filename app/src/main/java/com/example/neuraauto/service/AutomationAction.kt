@@ -47,6 +47,8 @@ data class AutomationAction(
 
     companion object {
         const val ACTION_SEND_MESSAGE = "SEND_MESSAGE"
+        const val ACTION_OPEN_APP = "OPEN_APP"
+        const val ACTION_SYSTEM_TOGGLE = "SYSTEM_ACTION"
 
         /** Actions older than this are discarded rather than executed late. */
         const val MAX_AGE_MILLIS = 5 * 60 * 1000L

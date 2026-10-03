@@ -12,6 +12,9 @@
       simply null (treated as an "unknown network" bucket); nothing breaks.
     -->
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
+    <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
     <!--
       Voice commands during the countdown ("ส่งเลย" / "ข้าม"). Runtime-requested
       from the dashboard; when denied the countdown is simply silent and the

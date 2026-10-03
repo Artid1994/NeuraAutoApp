@@ -12,8 +12,8 @@ android {
         applicationId = "com.example.neuraauto"
         minSdk = 26
         targetSdk = 35
-        versionCode = 16
-        versionName = "6.1.0-swipe-tabs"
+        versionCode = 17
+        versionName = "6.2.0-thai-intent"
     }
 
     buildTypes {

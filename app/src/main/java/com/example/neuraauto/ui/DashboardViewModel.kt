@@ -19,6 +19,9 @@ import com.example.neuraauto.service.AutomationAction
 import com.example.neuraauto.service.LaunchOutcome
 import com.example.neuraauto.service.WorkflowRunner
 import com.example.neuraauto.service.WorkflowScheduler
+import com.example.neuraauto.voice.ParsedIntent
+import com.example.neuraauto.voice.ThaiIntentParser
+import com.example.neuraauto.voice.VoiceIntentBridge
 import com.example.neuraauto.worker.TrainingScheduler
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -42,7 +45,13 @@ data class DashboardUiState(
     val lastTrainingRun: AutomationSettings.TrainingRunSummary =
         AutomationSettings.TrainingRunSummary(0L, 0, 0, 0f),
     /** Transient feedback from "Test Trigger Now". */
-    val testResult: String? = null
+    val testResult: String? = null,
+
+    /** Phase 6.2: parsed intent from Thai voice/text input. */
+    val parsedVoiceIntent: ParsedIntent? = null,
+
+    /** Phase 6.2: result of executing a voice-driven intent. */
+    val voiceActionResult: String? = null
 ) {
     val activeWorkflows: List<AutomationWorkflow> get() = workflows.filter { it.isActive }
 
@@ -342,6 +351,45 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     /** Clear the test feedback banner. */
     fun clearTestResult() {
         _uiState.value = _uiState.value.copy(testResult = null)
+    }
+
+    /** Phase 6.2: Parse a Thai text/voice input into a structured [ParsedIntent]. */
+    fun parseVoiceInput(input: String) {
+        val intent = ThaiIntentParser.parse(input)
+        _uiState.value = _uiState.value.copy(
+            parsedVoiceIntent = intent,
+            voiceActionResult = if (intent == null) "ไม่สามารถจับคู่ intent ได้" else null
+        )
+        if (intent != null) {
+            Log.i(
+                TAG,
+                "Parsed voice intent: ${intent.type} → target=${intent.target}, " +
+                    "payload=${intent.payload}, conf=${intent.confidence}"
+            )
+        } else {
+            Log.d(TAG, "No intent matched for input: $input")
+        }
+    }
+
+    /** Phase 6.2: Execute the currently parsed voice intent. */
+    fun executeVoiceIntent() {
+        val intent = _uiState.value.parsedVoiceIntent ?: return
+        viewModelScope.launch {
+            val result = VoiceIntentBridge.execute(getApplication(), intent)
+            _uiState.value = _uiState.value.copy(
+                voiceActionResult = result.displayMessage,
+                parsedVoiceIntent = null
+            )
+            Log.i(TAG, "Voice intent execution result: ${result.displayMessage}")
+        }
+    }
+
+    /** Phase 6.2: Clear voice intent parsing and execution results. */
+    fun clearVoiceResult() {
+        _uiState.value = _uiState.value.copy(
+            parsedVoiceIntent = null,
+            voiceActionResult = null
+        )
     }
 
     /** Mark a workflow as explicitly verified by the user and lock it. */

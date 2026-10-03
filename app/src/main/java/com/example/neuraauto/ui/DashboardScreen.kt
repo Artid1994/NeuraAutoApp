@@ -50,6 +50,9 @@ import com.example.neuraauto.data.AppExclusionManager
 import com.example.neuraauto.data.AutomationSettings
 import com.example.neuraauto.data.AutomationWorkflow
 import com.example.neuraauto.data.WorkflowRepository
+import com.example.neuraauto.voice.IntentType
+import com.example.neuraauto.voice.ParsedIntent
+import com.example.neuraauto.voice.ThaiIntentParser
 import kotlinx.coroutines.launch
 
 /**
@@ -59,7 +62,7 @@ import kotlinx.coroutines.launch
  * leave the badge stale.
  */
 val APP_VERSION_LABEL: String =
-    "NeuraAuto AI v${BuildConfig.VERSION_NAME} (Phase 6.1: Swipe Tabs)"
+    "NeuraAuto AI v${BuildConfig.VERSION_NAME} (Phase 6.2: Thai Voice Intent)"
 
 // ── Badge helpers ──────────────────────────────────────────────────────────
 
@@ -219,7 +222,10 @@ fun DashboardScreen(
                     state = state,
                     onAddWorkflow = { showAddWorkflowDialog = true },
                     onTestTrigger = viewModel::testTrigger,
-                    onAnalyze = viewModel::analyze
+                    onAnalyze = viewModel::analyze,
+                    onParseVoiceIntent = viewModel::parseVoiceInput,
+                    onExecuteVoiceIntent = viewModel::executeVoiceIntent,
+                    onClearVoiceResult = viewModel::clearVoiceResult
                 )
                 1 -> WorkflowsTab(
                     state = state,
@@ -279,7 +285,10 @@ private fun DashboardTab(
     state: DashboardUiState,
     onAddWorkflow: () -> Unit,
     onTestTrigger: (AutomationWorkflow) -> Unit,
-    onAnalyze: () -> Unit
+    onAnalyze: () -> Unit,
+    onParseVoiceIntent: (String) -> Unit,
+    onExecuteVoiceIntent: () -> Unit,
+    onClearVoiceResult: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -353,6 +362,14 @@ private fun DashboardTab(
                 }
             }
         }
+
+        // Phase 6.2: Thai Voice/Text Intent Tester
+        VoiceIntentTesterCard(
+            state = state,
+            onParseVoiceIntent = onParseVoiceIntent,
+            onExecuteVoiceIntent = onExecuteVoiceIntent,
+            onClearVoiceResult = onClearVoiceResult
+        )
 
         // Active workflows quick view
         if (state.activeWorkflows.isNotEmpty()) {
@@ -433,6 +450,155 @@ private fun DashboardTab(
             )
         }
     }
+}
+
+// ── Voice Intent Tester ────────────────────────────────────────────────────
+
+/**
+ * Phase 6.2: Card on the Dashboard that lets the user type (or paste) a Thai
+ * phrase, see the parser's breakdown, and trigger execution.
+ *
+ * The card has three visual states:
+ *  1. Idle          — text field + "Parse" button.
+ *  2. Parsed        — the [ParsedIntent] breakdown (Action, Target, Payload)
+ *                     with an "Execute" button.
+ *  3. Result        — a banner showing either the execution outcome or a
+ *                     parse-error message.
+ *
+ * Execution goes through [VoiceIntentBridge.execute], which enforces the
+ * [SafetyEngine] gate and then delegates to [WorkflowRunner.dispatch] — the
+ * exact same pipeline as scheduled alarms and manual test triggers.
+ */
+@Composable
+private fun VoiceIntentTesterCard(
+    state: DashboardUiState,
+    onParseVoiceIntent: (String) -> Unit,
+    onExecuteVoiceIntent: () -> Unit,
+    onClearVoiceResult: () -> Unit
+) {
+    var inputText by remember { mutableStateOf("") }
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = "🎙️ Thai Voice/Text Intent Tester",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "ป้อนข้อความภาษาไทยเพื่อทดสอบการแยก intent (ไม่ใช้ LLM)",
+                style = MaterialTheme.typography.bodySmall,
+                color = Color.Gray
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            OutlinedTextField(
+                value = inputText,
+                onValueChange = { inputText = it },
+                label = { Text("เช่น: ส่งไลน์หาโจ๊ว่าสวัสดีครับ") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = false,
+                minLines = 2
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Button(
+                onClick = { onParseVoiceIntent(inputText) },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = inputText.isNotBlank()
+            ) {
+                Text("Parse Intent")
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Parsed intent breakdown
+            state.parsedVoiceIntent?.let { intent ->
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    shape = MaterialTheme.shapes.small,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text(
+                            text = "Parsed Intent",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Action: ${intent.type.name}",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        Text(
+                            text = "Target: ${formatVoiceTarget(intent)}",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        Text(
+                            text = "Payload: ${intent.payload.ifBlank { "(none)" }}",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        if (intent.appName.isNotBlank()) {
+                            Text(
+                                text = "App: ${intent.appName}",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                        Text(
+                            text = "Confidence: ${(intent.confidence * 100).toInt()}%",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.Gray
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        OutlinedButton(
+                            onClick = onExecuteVoiceIntent,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("▶️ Execute")
+                        }
+                    }
+                }
+            }
+
+            // Result / error banner
+            state.voiceActionResult?.let { message ->
+                Surface(
+                    color = if (message.contains("🚫")) MaterialTheme.colorScheme.errorContainer
+                    else MaterialTheme.colorScheme.secondaryContainer,
+                    shape = MaterialTheme.shapes.small,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = message,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.weight(1f)
+                        )
+                        TextButton(onClick = onClearVoiceResult) {
+                            Text("ปิด", style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Build a human-readable Target string for the voice intent breakdown. */
+@Composable
+private fun formatVoiceTarget(intent: ParsedIntent): String = when (intent.type) {
+    IntentType.SEND_MESSAGE ->
+        if (intent.target.isNotBlank()) "${intent.appName} → ${intent.target}" else intent.appName
+    IntentType.OPEN_APP -> intent.appName
+    IntentType.SYSTEM_ACTION -> ThaiIntentParser.resolveSystemLabel(intent.target)
 }
 
 @Composable

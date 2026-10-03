@@ -90,12 +90,17 @@ object SafetyEngine {
      *
      * Rejects:
      *  - Expired actions (older than [AutomationAction.MAX_AGE_MILLIS])
-     *  - Actions with no steps and no message (nothing to do)
+     *  - Actions with no steps, no message, and no target (nothing to do)
+     *
+     * Phase 6.2: OPEN_APP has an empty message and no steps, but its targetPackage
+     * is the work to do. SYSTEM_ACTION carries its command in the message field.
      */
     fun isExecutionAllowed(action: AutomationAction): Boolean {
         if (action.isExpired()) return false
-        if (action.steps.isEmpty() && action.message.isBlank()) return false
-        return true
+        if (action.steps.isNotEmpty()) return true
+        if (action.message.isNotBlank()) return true
+        if (action.targetPackage.isNotBlank()) return true
+        return false
     }
 
     // ── Unified gate ─────────────────────────────────────────────────────────
@@ -105,13 +110,22 @@ object SafetyEngine {
      *
      * This is the single entry point that all execution paths must call.
      * Returns a [SafetyDecision] with the verdict and a human-readable reason.
+     *
+     * Phase 6.2 additions:
+     *  - [ACTION_OPEN_APP] is permitted alongside [ACTION_SEND_MESSAGE].
+     *  - [ACTION_SYSTEM_TOGGLE] skips the AppPolicy check (no app target) and
+     *    the DataPolicy message-content check (the message is a command code,
+     *    e.g. "TOGGLE_WIFI:ON", not user-typed text).
      */
     fun isActionSafe(context: Context, action: AutomationAction): SafetyDecision {
-        // AppPolicy
-        if (!isAppAllowed(context, action.targetPackage)) {
-            return SafetyDecision.Unsafe(
-                reason = "App policy violation: ${action.targetPackage} is not allowed"
-            )
+        // AppPolicy — only enforced for app-targeted actions.
+        // SYSTEM_ACTION has an empty targetPackage and is not app-scoped.
+        if (action.actionType != AutomationAction.ACTION_SYSTEM_TOGGLE) {
+            if (!isAppAllowed(context, action.targetPackage)) {
+                return SafetyDecision.Unsafe(
+                    reason = "App policy violation: ${action.targetPackage} is not allowed"
+                )
+            }
         }
 
         // ActionPolicy
@@ -121,11 +135,15 @@ object SafetyEngine {
             )
         }
 
-        // DataPolicy
-        if (!isMessageSafe(action.message)) {
-            return SafetyDecision.Unsafe(
-                reason = "Data policy violation: message content is not safe"
-            )
+        // DataPolicy — only applies to message-sending actions. The message
+        // field of a SYSTEM_ACTION carries a command code, not prose, so the
+        // password/financial-content filters do not apply.
+        if (action.actionType == AutomationAction.ACTION_SEND_MESSAGE) {
+            if (!isMessageSafe(action.message)) {
+                return SafetyDecision.Unsafe(
+                    reason = "Data policy violation: message content is not safe"
+                )
+            }
         }
 
         // ExecutionPolicy
@@ -167,6 +185,8 @@ object SafetyEngine {
     )
 
     private val ALLOWED_ACTION_TYPES = setOf(
-        AutomationAction.ACTION_SEND_MESSAGE
+        AutomationAction.ACTION_SEND_MESSAGE,
+        AutomationAction.ACTION_OPEN_APP,
+        AutomationAction.ACTION_SYSTEM_TOGGLE
     )
 }
