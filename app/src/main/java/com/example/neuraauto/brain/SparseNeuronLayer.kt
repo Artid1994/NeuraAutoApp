@@ -55,6 +55,30 @@ class SparseNeuronLayer(
     var lastActivation: List<Activation> = emptyList()
         private set
 
+    // ── SNN benchmark hooks ─────────────────────────────────────────────────
+
+    /**
+     * Called after each neuron activation during [forward]/[trainStep].
+     *
+     * Enables future SNN benchmarking by providing a hook for recording
+     * activation patterns without modifying the core learning logic.
+     */
+    var onNeuronActivated: ((index: Int, activation: Float) -> Unit)? = null
+
+    /**
+     * Called when a new neuron is materialised (first activation).
+     *
+     * Tracks the growth of the resident neuron set over time.
+     */
+    var onNeuronMaterialized: ((index: Int) -> Unit)? = null
+
+    /**
+     * Called after each [trainStep] with the winning neuron and learning rate.
+     *
+     * Provides visibility into the learning dynamics for SNN analysis.
+     */
+    var onTrainingStep: ((pattern: FloatArray, winnerIndex: Int, learningRate: Float) -> Unit)? = null
+
     // ── forward ─────────────────────────────────────────────────────────────
 
     /**
@@ -70,12 +94,18 @@ class SparseNeuronLayer(
         val candidates = candidateIndices(input)
         val scored = ArrayList<Activation>(candidates.size)
         for (index in candidates) {
+            val isNew = !weights.containsKey(index)
             val row = weights.getOrPut(index) { randomRow() }
+            if (isNew) {
+                onNeuronMaterialized?.invoke(index)
+            }
             var sum = biases.getOrPut(index) { 0f }
             for (j in 0 until inputSize) {
                 sum += input[j] * row[j]
             }
-            scored.add(Activation(index, if (sum > 0f) sum else 0f))
+            val activation = if (sum > 0f) sum else 0f
+            scored.add(Activation(index, activation))
+            onNeuronActivated?.invoke(index, activation)
         }
         lastActivation = scored
         return scored
@@ -114,6 +144,8 @@ class SparseNeuronLayer(
         }
         val bias = biases.getOrPut(winner.index) { 0f }
         biases[winner.index] = bias + learningRate * (1f - bias)
+
+        onTrainingStep?.invoke(input, winner.index, learningRate)
 
         return winner.activation
     }

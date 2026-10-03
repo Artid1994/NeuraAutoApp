@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.util.Log
+import com.example.neuraauto.safety.SafetyEngine
 
 /**
  * Outcome of a launch attempt, carrying a message suitable for display in the
@@ -76,6 +77,13 @@ object WorkflowRunner {
      * execution is skipped gracefully to avoid interrupting the active user.
      */
     fun dispatch(context: Context, action: AutomationAction): LaunchOutcome {
+        // SafetyEngine gate — unified safety check before any execution
+        val safetyDecision = SafetyEngine.isActionSafe(context, action)
+        if (!safetyDecision.isSafe) {
+            Log.w(TAG, "SafetyEngine blocked dispatch: ${(safetyDecision as SafetyEngine.SafetyDecision.Unsafe).reason}")
+            return LaunchOutcome.Failed("Safety check failed: ${(safetyDecision as SafetyEngine.SafetyDecision.Unsafe).reason}")
+        }
+
         val rawPackage = action.targetPackage
         val packageName = sanitizePackageName(rawPackage)
             ?: return LaunchOutcome.InvalidPackage(

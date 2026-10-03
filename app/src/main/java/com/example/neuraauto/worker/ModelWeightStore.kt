@@ -6,6 +6,7 @@ import com.example.neuraauto.brain.SparseNeuronLayer
 import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.io.File
+import java.util.zip.CRC32
 
 /**
  * Persists [SparseNeuronLayer] weights between background runs.
@@ -14,7 +15,7 @@ import java.io.File
  * would mean nothing — each run would start from scratch. Saving makes the
  * learning cumulative.
  *
- * FILE FORMAT (v3, sparse):
+ * FILE FORMAT (v4, sparse + CRC32):
  *   int    magic
  *   int    version
  *   int    inputSize
@@ -23,11 +24,17 @@ import java.io.File
  *   int[neuronCount] indices
  *   float[neuronCount * inputSize] rows (row-major)
  *   float[neuronCount] biases
+ *   long   crc32                — checksum of all preceding bytes
  *
  * Storing only materialised neurons is what keeps the file small: a layer with
  * 100,000 addressable indices but 300 touched neurons writes 300 rows, not
  * 100,000. A header/shape mismatch (e.g. the feature count changed in an
  * update) is treated as "no saved model" rather than loading garbage.
+ *
+ * The CRC32 checksum is computed over all bytes written after the header
+ * (indices + rows + biases) and validated on load. A corrupted file with a
+ * valid header but mismatched checksum is rejected rather than silently
+ * loading garbage weights.
  */
 class ModelWeightStore(context: Context) {
 
@@ -43,9 +50,12 @@ class ModelWeightStore(context: Context) {
                 out.writeInt(snapshot.capacity)
                 out.writeInt(snapshot.indices.size)
 
-                snapshot.indices.forEach { out.writeInt(it) }
-                snapshot.rows.forEach { row -> row.forEach { out.writeFloat(it) } }
-                snapshot.biasValues.forEach { out.writeFloat(it) }
+                val crc = CRC32()
+                snapshot.indices.forEach { out.writeInt(it); crc.update(intToBytes(it)) }
+                snapshot.rows.forEach { row -> row.forEach { out.writeFloat(it); crc.update(floatToBytes(it)) } }
+                snapshot.biasValues.forEach { out.writeFloat(it); crc.update(floatToBytes(it)) }
+
+                out.writeLong(crc.value)
             }
             Log.i(
                 TAG,
@@ -93,6 +103,19 @@ class ModelWeightStore(context: Context) {
                 }
                 val biasValues = FloatArray(neuronCount) { input.readFloat() }
 
+                val storedCrc = input.readLong()
+
+                // Validate CRC32 checksum
+                val crc = CRC32()
+                indices.forEach { crc.update(intToBytes(it)) }
+                rows.forEach { row -> row.forEach { crc.update(floatToBytes(it)) } }
+                biasValues.forEach { crc.update(floatToBytes(it)) }
+
+                if (crc.value != storedCrc) {
+                    Log.w(TAG, "CRC32 mismatch: stored=$storedCrc, computed=${crc.value}; model file is corrupted")
+                    return false
+                }
+
                 val snapshot = SparseNeuronLayer.SparseSnapshot(
                     inputSize = inputSize,
                     capacity = capacity,
@@ -108,10 +131,19 @@ class ModelWeightStore(context: Context) {
         }
     }
 
+    private fun intToBytes(value: Int): ByteArray = byteArrayOf(
+        (value shr 24).toByte(),
+        (value shr 16).toByte(),
+        (value shr 8).toByte(),
+        value.toByte()
+    )
+
+    private fun floatToBytes(value: Float): ByteArray = intToBytes(java.lang.Float.floatToIntBits(value))
+
     private companion object {
         const val TAG = "ModelWeightStore"
         const val FILE_NAME = "neuraauto_model.bin"
         const val MAGIC = 0x4E455552 // "NEUR"
-        const val VERSION = 3 // v3: sparse 100k-capacity layer (Phase 4.1)
+        const val VERSION = 4 // v4: sparse 100k-capacity layer + CRC32 checksum (Phase 6.0)
     }
 }

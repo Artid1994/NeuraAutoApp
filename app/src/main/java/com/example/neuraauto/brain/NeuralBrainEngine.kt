@@ -190,6 +190,51 @@ class NeuralBrainEngine {
             )
     }
 
+    /**
+     * Build a multi-dimensional [ConfidenceVector] for a detected pattern.
+     *
+     * Phase 6.0 — replaces the single scalar confidence with a six-dimensional
+     * vector that captures the full context of a detected pattern.
+     *
+     * @param pattern the detected sequence pattern
+     * @param sample  the ambient context sample for this (package, hour) pair
+     * @param isUserVerified whether the user has verified this workflow
+     * @param neuralScore the SparseNeuronLayer activation score (0..1)
+     * @param safetyScore the inverse of risk level (1.0 = no risk)
+     */
+    fun buildConfidenceVector(
+        pattern: ActionSequencePattern,
+        sample: UserActivityLog?,
+        isUserVerified: Boolean,
+        neuralScore: Float,
+        safetyScore: Float
+    ): ConfidenceVector {
+        val frequency = pattern.confidence
+
+        val contextual = if (sample != null) {
+            val chargingScore = if (sample.isCharging) 1f else 0f
+            val wifiScore = if (sample.isWifiConnected) 1f else 0f
+            val weekendScore = if (sample.dayOfWeek >= 6) 1f else 0f
+            (chargingScore + wifiScore + weekendScore) / 3f
+        } else 0.5f
+
+        val content = pattern.steps
+            .firstOrNull { it.kind == com.example.neuraauto.brain.ActionStepKind.TYPE_TEXT }
+            ?.textSnippet
+            ?.let { if (it.isNotBlank()) 1f else 0f } ?: 0f
+
+        val user = if (isUserVerified) 1f else 0f
+
+        return ConfidenceVector(
+            frequency = frequency,
+            contextual = contextual,
+            content = content,
+            user = user,
+            neural = neuralScore.coerceIn(0f, 1f),
+            safety = safetyScore.coerceIn(0f, 1f)
+        )
+    }
+
     companion object {
         /** The 80% bar from the product spec. */
         const val DEFAULT_CONFIDENCE_THRESHOLD = 0.8f

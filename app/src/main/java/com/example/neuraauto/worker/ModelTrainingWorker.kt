@@ -13,6 +13,8 @@ import com.example.neuraauto.data.AutomationSettings
 import com.example.neuraauto.data.AutomationWorkflow
 import com.example.neuraauto.data.UserActivityLog
 import com.example.neuraauto.data.WorkflowRepository
+import com.example.neuraauto.safety.SafetyEngine
+import com.example.neuraauto.service.AutomationAction
 import com.example.neuraauto.service.WorkflowScheduler
 import com.example.neuraauto.worker.TrainingScheduler
 import kotlinx.coroutines.Dispatchers
@@ -127,6 +129,20 @@ class ModelTrainingWorker(
                     // Never resurrect something the user switched off or rejected.
                     if (slot != null && (!slot.isActive || slot.isUserRejected)) {
                         Log.i(TAG, "Skipping ${pattern.packageName}@${pattern.hourOfDay}: user disabled/rejected it")
+                        continue
+                    }
+
+                    // SafetyEngine gate — verify the action is safe before auto-enabling
+                    val actionToCheck = AutomationAction(
+                        workflowId = slot?.id ?: 0L,
+                        targetPackage = pattern.packageName,
+                        actionType = AutomationAction.ACTION_SEND_MESSAGE,
+                        message = messageFor(pattern),
+                        steps = pattern.steps.map { it.kind.name }
+                    )
+                    val safetyDecision = SafetyEngine.isActionSafe(applicationContext, actionToCheck)
+                    if (!safetyDecision.isSafe) {
+                        Log.w(TAG, "SafetyEngine blocked auto-enable for ${pattern.packageName}@${pattern.hourOfDay}: ${(safetyDecision as SafetyEngine.SafetyDecision.Unsafe).reason}")
                         continue
                     }
 

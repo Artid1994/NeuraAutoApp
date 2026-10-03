@@ -46,6 +46,10 @@ object SmartNodeFinder {
      *
      * Deliberately excludes destructive confirmations ("ลบ", "Delete") so the
      * self-healing pass never taps through something irreversible.
+     *
+     * Also excludes "cancel" and "deny" — these are potentially destructive
+     * in financial or confirmation contexts. They are moved to
+     * [DESTRUCTIVE_DISMISS_INTENTS] which requires explicit user confirmation.
      */
     val DISMISS_INTENTS = listOf(
         // Thai
@@ -53,7 +57,21 @@ object SmartNodeFinder {
         "ไม่ใช่ตอนนี้", "ไม่ขอบคุณ", "เข้าใจแล้ว", "เริ่มใช้งาน",
         // English
         "ok", "allow", "accept", "close", "skip", "later",
-        "not now", "no thanks", "got it", "continue", "dismiss",
+        "not now", "no thanks", "got it", "continue", "dismiss"
+    )
+
+    /**
+     * Potentially destructive dismiss intents that require explicit user
+     * confirmation before being acted upon.
+     *
+     * These are separated from [DISMISS_INTENTS] so that the self-healing
+     * pass never taps through something that could cancel a transaction,
+     * deny a permission that was intentionally requested, or abort a process.
+     */
+    val DESTRUCTIVE_DISMISS_INTENTS = listOf(
+        // Thai
+        "ยกเลิก", "ปฏิเสธ",
+        // English
         "cancel", "deny"
     )
 

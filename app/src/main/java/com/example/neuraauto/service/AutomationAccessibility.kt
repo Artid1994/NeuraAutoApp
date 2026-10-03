@@ -21,6 +21,7 @@ import com.example.neuraauto.data.AppDatabase
 import com.example.neuraauto.data.AppExclusionManager
 import com.example.neuraauto.data.InAppActionLog
 import com.example.neuraauto.data.InAppActionRecorder
+import com.example.neuraauto.safety.SafetyEngine
 
 /**
  * Single place where the device is actually driven.
@@ -147,6 +148,14 @@ class AutomationAccessibility : AccessibilityService() {
      * legacy open-app / type / send path.
      */
     private fun performSendMessage(action: AutomationAction) {
+        // SafetyEngine gate — unified safety check before executing any action
+        val safetyDecision = SafetyEngine.isActionSafe(applicationContext, action)
+        if (!safetyDecision.isSafe) {
+            Log.w(TAG, "SafetyEngine blocked execution: ${(safetyDecision as SafetyEngine.SafetyDecision.Unsafe).reason}")
+            clearPendingAction()
+            return
+        }
+
         val rootNode = rootInActiveWindow ?: return
 
         if (action.steps.isNotEmpty()) {
@@ -255,6 +264,7 @@ class AutomationAccessibility : AccessibilityService() {
     private fun dismissBlockingPopup(rootNode: AccessibilityNodeInfo): Boolean {
         if (popupsDismissed >= MAX_POPUP_DISMISSALS) return false
 
+        // Safe dismiss intents only — never tap destructive buttons automatically
         val dismissButton = SmartNodeFinder.findByIntent(
             rootNode,
             SmartNodeFinder.DISMISS_INTENTS
@@ -266,6 +276,16 @@ class AutomationAccessibility : AccessibilityService() {
                 Log.i(TAG, "Dismissed popup via button ($popupsDismissed)")
                 return true
             }
+        }
+
+        // Destructive dismiss intents require explicit user confirmation — skip
+        val destructiveButton = SmartNodeFinder.findByIntent(
+            rootNode,
+            SmartNodeFinder.DESTRUCTIVE_DISMISS_INTENTS
+        )
+        if (destructiveButton != null) {
+            Log.i(TAG, "Skipping destructive dismiss button — requires user confirmation")
+            return false
         }
 
         if (SmartNodeFinder.looksLikeDialog(rootNode)) {
