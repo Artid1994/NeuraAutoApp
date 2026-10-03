@@ -12,8 +12,8 @@ android {
         applicationId = "com.example.neuraauto"
         minSdk = 26
         targetSdk = 35
-        versionCode = 13
-        versionName = "4.3.0-step4-voice-interactive"
+        versionCode = 14
+        versionName = "5.0.0-smart-editor"
     }
 
     buildTypes {

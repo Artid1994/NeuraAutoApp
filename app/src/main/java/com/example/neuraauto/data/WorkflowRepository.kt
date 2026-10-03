@@ -100,4 +100,31 @@ object WorkflowRepository {
         if (encoded.isEmpty()) return emptyList()
         return encoded.split(",").map { it.trim() }.filter { it.isNotEmpty() }
     }
+
+    /**
+     * Update a workflow's step sequence and lock it for long-term memory
+     * protection.
+     *
+     * Called when the user saves a corrected step sequence from the Visual
+     * Step Editor. The workflow row is updated in place (preserving the id
+     * and creation time) and `isLocked` is set to true so auto-pruning and
+     * background training never delete it.
+     *
+     * @return the updated workflow row.
+     */
+    suspend fun updateAndLock(
+        dao: AutomationWorkflowDao,
+        workflow: AutomationWorkflow,
+        correctedSteps: List<String>
+    ): AutomationWorkflow {
+        val updated = workflow.copy(
+            targetMessage = encodeMessage(
+                message = messageOf(workflow),
+                steps = correctedSteps
+            ),
+            isLocked = true
+        )
+        save(dao, updated)
+        return updated
+    }
 }

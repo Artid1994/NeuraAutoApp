@@ -9,6 +9,8 @@ import com.example.neuraauto.brain.ActionStepKind
 import com.example.neuraauto.brain.BrainAnalysis
 import com.example.neuraauto.brain.NeuralBrainEngine
 import com.example.neuraauto.brain.SequenceAnalysis
+import com.example.neuraauto.brain.SparseNeuronLayer
+import com.example.neuraauto.worker.ModelWeightStore
 import com.example.neuraauto.data.AppDatabase
 import com.example.neuraauto.data.AutomationSettings
 import com.example.neuraauto.data.AutomationWorkflow
@@ -324,6 +326,59 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 Log.i(TAG, "Updated workflow ${workflow.id}")
             } catch (e: Exception) {
                 Log.w(TAG, "Failed to update workflow ${workflow.id}", e)
+            }
+        }
+    }
+
+    /**
+     * Save a corrected step sequence from the Visual Step Editor.
+     *
+     * Updates the workflow row in Room, re-trains the sparse neuron layer
+     * on the corrected pattern, and locks the workflow for long-term memory
+     * protection.
+     */
+    fun saveCorrectedSteps(workflow: AutomationWorkflow, correctedSteps: List<String>) {
+        viewModelScope.launch {
+            try {
+                val updated = WorkflowRepository.updateAndLock(
+                    dao = workflowDao,
+                    workflow = workflow,
+                    correctedSteps = correctedSteps
+                )
+
+                // Re-train the sparse neuron layer on the corrected pattern.
+                withContext(Dispatchers.IO) {
+                    val store = ModelWeightStore(getApplication())
+                    val layer = SparseNeuronLayer(
+                        inputSize = 10,
+                        capacity = SparseNeuronLayer.DEFAULT_CAPACITY
+                    )
+                    store.load(layer)
+
+                    // Build a feature vector from the corrected steps.
+                    val features = FloatArray(10) { 0.5f }
+                    features[0] = 1.0f  // Confidence (user-verified)
+                    features[1] = 1.0f  // SupportRatio
+                    features[2] = (correctedSteps.size / 6f).coerceAtMost(1f)  // SequenceLength
+                    features[3] = workflow.scheduledHour / 23f  // HourWindow
+                    features[7] = 1.0f  // UserVerifiedWeight
+
+                    layer.trainStep(features)
+                    store.save(layer)
+                }
+
+                // The workflow list Flow in init{} will emit the updated row.
+                _uiState.value = _uiState.value.copy(
+                    testResult = "Steps saved and locked for long-term memory"
+                )
+
+                Log.i(
+                    TAG,
+                    "Saved corrected steps for workflow ${updated.id}: " +
+                        "${correctedSteps.size} steps, locked=${updated.isLocked}"
+                )
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to save corrected steps for ${workflow.id}", e)
             }
         }
     }

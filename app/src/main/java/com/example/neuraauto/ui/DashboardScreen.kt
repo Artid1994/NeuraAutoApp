@@ -4,6 +4,11 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -23,6 +28,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.neuraauto.BuildConfig
 import com.example.neuraauto.brain.ActionSequencePattern
+import com.example.neuraauto.brain.ActionStep
+import com.example.neuraauto.brain.ActionStepKind
 import com.example.neuraauto.brain.RoutinePattern
 import com.example.neuraauto.data.AppExclusionManager
 import com.example.neuraauto.data.AutomationSettings
@@ -36,7 +43,50 @@ import com.example.neuraauto.data.WorkflowRepository
  * leave the badge stale.
  */
 val APP_VERSION_LABEL: String =
-    "NeuraAuto AI v${BuildConfig.VERSION_NAME} (Phase 4.3: Voice Interactive)"
+    "NeuraAuto AI v${BuildConfig.VERSION_NAME} (Phase 5.0: Smart Editor)"
+
+// ── Badge helpers ──────────────────────────────────────────────────────────
+
+/** High-contrast badge for workflow status. */
+@Composable
+private fun StatusBadge(text: String, containerColor: Color, contentColor: Color) {
+    Surface(
+        color = containerColor,
+        shape = MaterialTheme.shapes.extraSmall
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Bold,
+            color = contentColor,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+        )
+    }
+}
+
+/** Green badge for active workflows. */
+@Composable
+private fun ActiveBadge() = StatusBadge(
+    text = "● Active",
+    containerColor = Color(0xFF1B5E20),
+    contentColor = Color.White
+)
+
+/** Amber badge for locked / long-term memory. */
+@Composable
+private fun LockedBadge() = StatusBadge(
+    text = "🔒 Locked Memory",
+    containerColor = Color(0xFFE65100),
+    contentColor = Color.White
+)
+
+/** Blue badge for confidence score. */
+@Composable
+private fun ConfidenceBadge(percent: Int) = StatusBadge(
+    text = "Confidence: $percent%",
+    containerColor = Color(0xFF0D47A1),
+    contentColor = Color.White
+)
 
 /** 28dp app icon, or a lettered placeholder when the app cannot be resolved. */
 @Composable
@@ -102,95 +152,7 @@ private fun AppIdentity(packageName: String, modifier: Modifier = Modifier) {
     }
 }
 
-@Composable
-private fun AutonomousAiCard(
-    state: DashboardUiState,
-    onToggleAutoEnable: (Boolean) -> Unit,
-    onRunTrainingNow: () -> Unit
-) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                text = "🤖 Autonomous AI (Phase 4.3)",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = "ระบบเรียนรู้และตั้งเวลาอัตโนมัติให้เองทุกวัน " +
-                    "โดยไม่ต้องกดปุ่ม (เมื่อมั่นใจเกิน 80%)",
-                style = MaterialTheme.typography.bodySmall
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("เปิดใช้งานอัตโนมัติ", fontWeight = FontWeight.SemiBold)
-                    Text(
-                        text = if (state.autoEnableEnabled) {
-                            "ทำงานเบื้องหลัง — อาจส่งข้อความโดยไม่มีคนเฝ้า"
-                        } else {
-                            "ปิดอยู่ — ระบบจะแนะนำแต่ไม่ตั้งเวลาให้เอง"
-                        },
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                }
-                Switch(
-                    checked = state.autoEnableEnabled,
-                    onCheckedChange = onToggleAutoEnable
-                )
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-            val run = state.lastTrainingRun
-            if (run.hasRun) {
-                HorizontalDivider()
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "รอบล่าสุด: ${formatTimestamp(run.timestampMillis)}",
-                    style = MaterialTheme.typography.bodySmall
-                )
-                Text(
-                    text = "พบรูปแบบ ${run.patternsFound} รายการ • " +
-                        "ตั้งเวลาให้อัตโนมัติ ${run.autoEnabled} รายการ",
-                    style = MaterialTheme.typography.bodySmall
-                )
-                Text(
-                    text = "คะแนนจากโมเดล (mean activation): " +
-                        "%.4f".format(run.meanScore),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color.Gray
-                )
-            } else {
-                Text(
-                    text = "ยังไม่เคยรัน — จะเริ่มหลังเครื่องชาร์จและต่อ Wi-Fi",
-                    style = MaterialTheme.typography.bodySmall
-                )
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-            OutlinedButton(
-                onClick = onRunTrainingNow,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("ฝึกโมเดลเดี๋ยวนี้ (Run Training Now)")
-            }
-        }
-    }
-}
-
-/** Minimal local formatter; avoids pulling in a date library for one label. */
-private fun formatTimestamp(millis: Long): String {
-    val calendar = java.util.Calendar.getInstance().apply { timeInMillis = millis }
-    val day = calendar.get(java.util.Calendar.DAY_OF_MONTH)
-    val month = calendar.get(java.util.Calendar.MONTH) + 1
-    val hour = calendar.get(java.util.Calendar.HOUR_OF_DAY)
-    val minute = calendar.get(java.util.Calendar.MINUTE)
-    return "%02d/%02d %02d:%02d น.".format(day, month, hour, minute)
-}
+// ── Main Screen ────────────────────────────────────────────────────────────
 
 @Composable
 fun DashboardScreen(
@@ -199,184 +161,386 @@ fun DashboardScreen(
     viewModel: DashboardViewModel = viewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    var selectedTab by remember { mutableStateOf(0) }
+
+    val tabs = listOf("Workflows", "Learned AI", "Settings")
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        // Tab Row
+        TabRow(selectedTabIndex = selectedTab) {
+            tabs.forEachIndexed { index, title ->
+                Tab(
+                    selected = selectedTab == index,
+                    onClick = { selectedTab = index },
+                    text = { Text(title) }
+                )
+            }
+        }
+
+        // Tab content
+        when (selectedTab) {
+            0 -> WorkflowsTab(
+                state = state,
+                onToggle = { workflow, active ->
+                    if (active) {
+                        viewModel.enableExistingWorkflow(workflow)
+                    } else {
+                        viewModel.disableWorkflow(workflow)
+                    }
+                },
+                onTestTrigger = viewModel::testTrigger,
+                onDismissTestResult = viewModel::clearTestResult,
+                onEdit = viewModel::updateWorkflow,
+                onDelete = viewModel::deleteWorkflow,
+                onEditSteps = { workflow, steps ->
+                    viewModel.saveCorrectedSteps(workflow, steps)
+                }
+            )
+            1 -> LearnedAiTab(
+                state = state,
+                onAnalyze = viewModel::analyze,
+                onEnable = viewModel::enableWorkflow,
+                onDisable = viewModel::disableWorkflow,
+                onVerify = viewModel::verifyWorkflow,
+                onReject = viewModel::rejectWorkflow,
+                onEnableSequence = viewModel::enableSequenceWorkflow
+            )
+            2 -> SettingsTab(
+                state = state,
+                onToggleAutoEnable = viewModel::setAutoEnableEnabled,
+                onRunTrainingNow = {
+                    viewModel.runTrainingNow()
+                    onRefreshTrainingSummary()
+                },
+                onOpenAccessibilitySettings = onOpenAccessibilitySettings
+            )
+        }
+    }
+}
+
+// ── Tab 1: Workflows ───────────────────────────────────────────────────────
+
+@Composable
+private fun WorkflowsTab(
+    state: DashboardUiState,
+    onToggle: (AutomationWorkflow, Boolean) -> Unit,
+    onTestTrigger: (AutomationWorkflow) -> Unit,
+    onDismissTestResult: () -> Unit,
+    onEdit: (AutomationWorkflow) -> Unit,
+    onDelete: (AutomationWorkflow) -> Unit,
+    onEditSteps: (AutomationWorkflow, List<String>) -> Unit
+) {
+    var editingWorkflow by remember { mutableStateOf<AutomationWorkflow?>(null) }
+    var stepEditorWorkflow by remember { mutableStateOf<AutomationWorkflow?>(null) }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Text(
-            text = "🧠 NeuraAuto AI Dashboard",
-            style = MaterialTheme.typography.headlineMedium
+            text = "Active Workflows",
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold
         )
 
-        VersionBadge()
-
-        AccessibilityCard(onOpenAccessibilitySettings = onOpenAccessibilitySettings)
-
-        ActivityDataCard(
-            logCount = state.logCount,
-            actionCount = state.actionCount
-        )
-
-        SmartRecommendationCard(
-            state = state,
-            onAnalyze = viewModel::analyze,
-            onEnable = viewModel::enableWorkflow,
-            onDisable = viewModel::disableWorkflow,
-            onVerify = viewModel::verifyWorkflow,
-            onReject = viewModel::rejectWorkflow
-        )
-
-        AutonomousAiCard(
-            state = state,
-            onToggleAutoEnable = viewModel::setAutoEnableEnabled,
-            onRunTrainingNow = {
-                viewModel.runTrainingNow()
-                onRefreshTrainingSummary()
-            }
-        )
-
-        LearnedWorkflowCard(
-            state = state,
-            onEnable = viewModel::enableSequenceWorkflow,
-            onDisable = viewModel::disableWorkflow,
-            onVerify = viewModel::verifyWorkflow,
-            onReject = viewModel::rejectWorkflow
-        )
-
-        WorkflowManagementCard(
-            state = state,
-            onToggle = { workflow, active ->
-                if (active) {
-                    viewModel.enableExistingWorkflow(workflow)
-                } else {
-                    viewModel.disableWorkflow(workflow)
+        if (state.workflows.isEmpty()) {
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text("ยังไม่มีงานอัตโนมัติที่ตั้งไว้")
+                    Text(
+                        text = "ไปที่แท็บ Learned AI เพื่อเปิดใช้งานรูปแบบที่ตรวจพบ",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.Gray
+                    )
                 }
-            },
-            onTestTrigger = viewModel::testTrigger,
-            onDismissTestResult = viewModel::clearTestResult,
-            onEdit = viewModel::updateWorkflow,
-            onDelete = viewModel::deleteWorkflow
-        )
-
-        AppExclusionSettingsCard()
-    }
-}
-
-@Composable
-private fun VersionBadge() {
-    Surface(
-        color = MaterialTheme.colorScheme.primaryContainer,
-        shape = MaterialTheme.shapes.small
-    ) {
-        Text(
-            text = APP_VERSION_LABEL,
-            style = MaterialTheme.typography.labelMedium,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onPrimaryContainer,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
-        )
-    }
-}
-
-@Composable
-private fun AccessibilityCard(onOpenAccessibilitySettings: () -> Unit) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(text = "สถานะสิทธิ์การควบคุมเครื่อง", style = MaterialTheme.typography.titleMedium)
-            Spacer(modifier = Modifier.height(8.dp))
-            Button(
-                onClick = onOpenAccessibilitySettings,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("เปิดสิทธิ์ Accessibility Service")
             }
-        }
-    }
-}
-
-@Composable
-private fun ActivityDataCard(logCount: Int, actionCount: Int) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(text = "ข้อมูลกิจกรรมที่เก็บได้", style = MaterialTheme.typography.titleMedium)
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(text = "สลับแอป: บันทึกแล้ว $logCount เหตุการณ์")
-            Text(text = "การใช้งานในแอป: $actionCount การกระทำ")
-            Spacer(modifier = Modifier.height(4.dp))
+        } else {
             Text(
-                text = "ระบบบันทึกการสลับแอป (1 ครั้ง/ชั่วโมง/วัน) และการคลิก/พิมพ์ข้อความในแอป",
+                text = "ทั้งหมด ${state.workflows.size} รายการ " +
+                    "(เปิดใช้งาน ${state.activeWorkflows.size})",
                 style = MaterialTheme.typography.bodySmall
             )
+
+            state.workflows.forEach { workflow ->
+                WorkflowCard(
+                    workflow = workflow,
+                    onToggle = { active -> onToggle(workflow, active) },
+                    onTestTrigger = { onTestTrigger(workflow) },
+                    onEdit = { editingWorkflow = workflow },
+                    onDelete = { onDelete(workflow) },
+                    onEditSteps = { stepEditorWorkflow = workflow }
+                )
+                HorizontalDivider()
+            }
         }
+
+        state.testResult?.let { message ->
+            Surface(
+                color = MaterialTheme.colorScheme.secondaryContainer,
+                shape = MaterialTheme.shapes.small,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = message,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.weight(1f)
+                    )
+                    TextButton(onClick = onDismissTestResult) { Text("ปิด") }
+                }
+            }
+        }
+    }
+
+    // Edit dialog
+    editingWorkflow?.let { workflow ->
+        WorkflowEditDialog(
+            workflow = workflow,
+            onDismiss = { editingWorkflow = null },
+            onSave = { updated ->
+                onEdit(updated)
+                editingWorkflow = null
+            }
+        )
+    }
+
+    // Visual Step Editor dialog
+    stepEditorWorkflow?.let { workflow ->
+        StepEditorDialog(
+            workflow = workflow,
+            onDismiss = { stepEditorWorkflow = null },
+            onSave = { correctedSteps ->
+                onEditSteps(workflow, correctedSteps)
+                stepEditorWorkflow = null
+            }
+        )
     }
 }
 
 @Composable
-private fun SmartRecommendationCard(
+private fun WorkflowCard(
+    workflow: AutomationWorkflow,
+    onToggle: (Boolean) -> Unit,
+    onTestTrigger: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+    onEditSteps: () -> Unit
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            // Header row with app identity and status badges
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                AppIdentity(packageName = workflow.targetApp, modifier = Modifier.weight(1f))
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    if (workflow.isActive) ActiveBadge()
+                    if (workflow.isLocked) LockedBadge()
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = "ทุกวัน ${"%02d".format(workflow.scheduledHour)}:" +
+                    "%02d".format(workflow.scheduledMinute) + " น.",
+                style = MaterialTheme.typography.bodySmall
+            )
+            Text(
+                text = "ข้อความ: ${WorkflowRepository.messageOf(workflow)}",
+                style = MaterialTheme.typography.bodySmall,
+                color = Color.Gray
+            )
+
+            // Show step count if multi-step
+            val steps = WorkflowRepository.stepsFor(workflow)
+            if (steps.isNotEmpty()) {
+                Text(
+                    text = "Steps: ${steps.size} (${steps.joinToString(" → ")})",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.Gray
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Toggle
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = if (workflow.isActive) "เปิดใช้งาน" else "ปิดอยู่",
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.weight(1f)
+                )
+                Switch(
+                    checked = workflow.isActive,
+                    onCheckedChange = onToggle
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Action buttons
+            OutlinedButton(
+                onClick = onTestTrigger,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Test Trigger Now")
+            }
+            Spacer(modifier = Modifier.height(4.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = onEditSteps,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Edit Steps")
+                }
+                OutlinedButton(
+                    onClick = onEdit,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Edit")
+                }
+                OutlinedButton(
+                    onClick = onDelete,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Delete")
+                }
+            }
+        }
+    }
+}
+
+// ── Tab 2: Learned AI ──────────────────────────────────────────────────────
+
+@Composable
+private fun LearnedAiTab(
     state: DashboardUiState,
     onAnalyze: () -> Unit,
     onEnable: (String, Int) -> Unit,
     onDisable: (AutomationWorkflow) -> Unit,
     onVerify: (AutomationWorkflow) -> Unit,
-    onReject: (AutomationWorkflow) -> Unit
+    onReject: (AutomationWorkflow) -> Unit,
+    onEnableSequence: (ActionSequencePattern) -> Unit
 ) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                text = "✨ Smart AI Recommendation",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
-            Spacer(modifier = Modifier.height(8.dp))
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text(
+            text = "AI Discoveries",
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold
+        )
 
-            val analysis = state.analysis
-            when {
-                analysis == null -> {
-                    Text("กดปุ่มด้านล่างเพื่อวิเคราะห์พฤติกรรมการใช้งานของคุณ")
-                }
+        // Smart Recommendation section
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(
+                    text = "✨ Smart AI Recommendation",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(8.dp))
 
-                analysis.routines.isEmpty() -> {
-                    Text(
-                        text = "ยังไม่พบรูปแบบที่มั่นใจเกิน 80%\n" +
-                            "(วิเคราะห์จาก ${analysis.analyzedLogs} เหตุการณ์)"
-                    )
-                }
-
-                else -> {
-                    Text(
-                        text = "พบ ${analysis.routines.size} รูปแบบ จาก ${analysis.analyzedLogs} เหตุการณ์",
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    analysis.routines.forEach { routine ->
-                        RoutineRow(
-                            routine = routine,
-                            enabledWorkflow = state.workflowFor(
-                                routine.packageName,
-                                routine.hourOfDay
-                            ),
-                            onEnable = { onEnable(routine.packageName, routine.hourOfDay) },
-                            onDisable = onDisable,
-                            onVerify = onVerify,
-                            onReject = onReject
+                val analysis = state.analysis
+                when {
+                    analysis == null -> {
+                        Text("กดปุ่มด้านล่างเพื่อวิเคราะห์พฤติกรรมการใช้งานของคุณ")
+                    }
+                    analysis.routines.isEmpty() -> {
+                        Text(
+                            text = "ยังไม่พบรูปแบบที่มั่นใจเกิน 80%\n" +
+                                "(วิเคราะห์จาก ${analysis.analyzedLogs} เหตุการณ์)"
+                        )
+                    }
+                    else -> {
+                        Text(
+                            text = "พบ ${analysis.routines.size} รูปแบบ จาก ${analysis.analyzedLogs} เหตุการณ์",
+                            style = MaterialTheme.typography.bodySmall
                         )
                         Spacer(modifier = Modifier.height(8.dp))
+                        analysis.routines.forEach { routine ->
+                            RoutineRow(
+                                routine = routine,
+                                enabledWorkflow = state.workflowFor(
+                                    routine.packageName,
+                                    routine.hourOfDay
+                                ),
+                                onEnable = { onEnable(routine.packageName, routine.hourOfDay) },
+                                onDisable = onDisable,
+                                onVerify = onVerify,
+                                onReject = onReject
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                        }
                     }
                 }
-            }
 
-            Spacer(modifier = Modifier.height(8.dp))
-            Button(
-                onClick = onAnalyze,
-                enabled = !state.isAnalyzing,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(if (state.isAnalyzing) "กำลังวิเคราะห์..." else "วิเคราะห์รูปแบบการใช้งาน")
+                Spacer(modifier = Modifier.height(8.dp))
+                Button(
+                    onClick = onAnalyze,
+                    enabled = !state.isAnalyzing,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(if (state.isAnalyzing) "กำลังวิเคราะห์..." else "วิเคราะห์รูปแบบการใช้งาน")
+                }
+            }
+        }
+
+        // Learned Workflows section
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(
+                    text = "🧩 Learned Workflows",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "สร้างจากลำดับการคลิก/พิมพ์ที่ระบบเก็บได้ในแต่ละวัน",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+
+                if (state.sequences.isEmpty()) {
+                    Text(
+                        text = "ยังไม่พบลำดับงานที่มั่นใจเกิน 80%\n" +
+                            "(เก็บได้ ${state.actionCount} การกระทำ — " +
+                            "ต้องมีการพิมพ์ข้อความหรือกดส่งอย่างน้อย 1 ขั้นตอน)"
+                    )
+                } else {
+                    state.sequences.forEach { sequence ->
+                        sequence.patterns.forEach { pattern ->
+                            SequenceRow(
+                                pattern = pattern,
+                                enabledWorkflow = state.workflowFor(
+                                    pattern.packageName,
+                                    pattern.hourOfDay
+                                ),
+                                onEnable = { onEnableSequence(pattern) },
+                                onDisable = onDisable,
+                                onVerify = onVerify,
+                                onReject = onReject
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                        }
+                    }
+                }
             }
         }
     }
@@ -397,9 +561,9 @@ private fun RoutineRow(
             text = "เวลา ${"%02d".format(routine.hourOfDay)}:00 น.",
             style = MaterialTheme.typography.bodySmall
         )
+        ConfidenceBadge(routine.confidencePercent)
         Text(
-            text = "ความมั่นใจ ${routine.confidencePercent}% " +
-                "(พบ ${routine.supportDays}/${routine.observedDays} วัน)",
+            text = "(พบ ${routine.supportDays}/${routine.observedDays} วัน)",
             style = MaterialTheme.typography.bodySmall
         )
         Spacer(modifier = Modifier.height(4.dp))
@@ -426,7 +590,6 @@ private fun RoutineRow(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(
                     onClick = {
-                        // Verify creates a workflow row if none exists yet
                         val wf = enabledWorkflow ?: AutomationWorkflow(
                             targetApp = routine.packageName,
                             scheduledHour = routine.hourOfDay,
@@ -459,56 +622,6 @@ private fun RoutineRow(
 }
 
 @Composable
-private fun LearnedWorkflowCard(
-    state: DashboardUiState,
-    onEnable: (ActionSequencePattern) -> Unit,
-    onDisable: (AutomationWorkflow) -> Unit,
-    onVerify: (AutomationWorkflow) -> Unit,
-    onReject: (AutomationWorkflow) -> Unit
-) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                text = "🧩 Learned Workflows (Phase 3.1)",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = "สร้างจากลำดับการคลิก/พิมพ์ที่ระบบเก็บได้ในแต่ละวัน",
-                style = MaterialTheme.typography.bodySmall
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-
-            if (state.sequences.isEmpty()) {
-                Text(
-                    text = "ยังไม่พบลำดับงานที่มั่นใจเกิน 80%\n" +
-                        "(เก็บได้ ${state.actionCount} การกระทำ — " +
-                        "ต้องมีการพิมพ์ข้อความหรือกดส่งอย่างน้อย 1 ขั้นตอน)"
-                )
-            } else {
-                state.sequences.forEach { sequence ->
-                    sequence.patterns.forEach { pattern ->
-                        SequenceRow(
-                            pattern = pattern,
-                            enabledWorkflow = state.workflowFor(
-                                pattern.packageName,
-                                pattern.hourOfDay
-                            ),
-                            onEnable = { onEnable(pattern) },
-                            onDisable = onDisable,
-                            onVerify = onVerify,
-                            onReject = onReject
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
 private fun SequenceRow(
     pattern: ActionSequencePattern,
     enabledWorkflow: AutomationWorkflow?,
@@ -528,9 +641,9 @@ private fun SequenceRow(
                 text = "เวลา ${"%02d".format(pattern.hourOfDay)}:00 น.",
                 style = MaterialTheme.typography.bodySmall
             )
+            ConfidenceBadge(pattern.confidencePercent)
             Text(
-                text = "ความมั่นใจ ${pattern.confidencePercent}% " +
-                    "(พบ ${pattern.supportDays}/${pattern.observedDays} วัน, " +
+                text = "(พบ ${pattern.supportDays}/${pattern.observedDays} วัน, " +
                     "${pattern.occurrences} ครั้ง)",
                 style = MaterialTheme.typography.bodySmall
             )
@@ -600,82 +713,338 @@ private fun SequenceRow(
     }
 }
 
+// ── Tab 3: Settings ────────────────────────────────────────────────────────
+
 @Composable
-private fun WorkflowManagementCard(
+private fun SettingsTab(
     state: DashboardUiState,
-    onToggle: (AutomationWorkflow, Boolean) -> Unit,
-    onTestTrigger: (AutomationWorkflow) -> Unit,
-    onDismissTestResult: () -> Unit,
-    onEdit: (AutomationWorkflow) -> Unit,
-    onDelete: (AutomationWorkflow) -> Unit
+    onToggleAutoEnable: (Boolean) -> Unit,
+    onRunTrainingNow: () -> Unit,
+    onOpenAccessibilitySettings: () -> Unit
 ) {
-    var editingWorkflow by remember { mutableStateOf<AutomationWorkflow?>(null) }
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text(
+            text = "Settings",
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold
+        )
 
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                text = "⚙️ Active Workflows (Phase 3)",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-
-            if (state.workflows.isEmpty()) {
-                Text("ยังไม่มีงานอัตโนมัติที่ตั้งไว้")
-            } else {
-                Text(
-                    text = "ทั้งหมด ${state.workflows.size} รายการ " +
-                        "(เปิดใช้งาน ${state.activeWorkflows.size})",
-                    style = MaterialTheme.typography.bodySmall
-                )
+        // Accessibility
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(text = "สถานะสิทธิ์การควบคุมเครื่อง", style = MaterialTheme.typography.titleMedium)
                 Spacer(modifier = Modifier.height(8.dp))
-
-                state.workflows.forEach { workflow ->
-                    WorkflowRow(
-                        workflow = workflow,
-                        onToggle = { active -> onToggle(workflow, active) },
-                        onTestTrigger = { onTestTrigger(workflow) },
-                        onEdit = { editingWorkflow = workflow },
-                        onDelete = { onDelete(workflow) }
-                    )
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-                }
-            }
-
-            state.testResult?.let { message ->
-                Spacer(modifier = Modifier.height(4.dp))
-                Surface(
-                    color = MaterialTheme.colorScheme.secondaryContainer,
-                    shape = MaterialTheme.shapes.small,
+                Button(
+                    onClick = onOpenAccessibilitySettings,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Row(
-                        modifier = Modifier.padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = message,
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.weight(1f)
-                        )
-                        TextButton(onClick = onDismissTestResult) { Text("ปิด") }
-                    }
+                    Text("เปิดสิทธิ์ Accessibility Service")
                 }
             }
         }
-    }
 
-    editingWorkflow?.let { workflow ->
-        WorkflowEditDialog(
-            workflow = workflow,
-            onDismiss = { editingWorkflow = null },
-            onSave = { updated ->
-                onEdit(updated)
-                editingWorkflow = null
+        // Autonomous AI
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(
+                    text = "🤖 Autonomous AI",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "ระบบเรียนรู้และตั้งเวลาอัตโนมัติให้เองทุกวัน " +
+                        "โดยไม่ต้องกดปุ่ม (เมื่อมั่นใจเกิน 80%)",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("เปิดใช้งานอัตโนมัติ", fontWeight = FontWeight.SemiBold)
+                        Text(
+                            text = if (state.autoEnableEnabled) {
+                                "ทำงานเบื้องหลัง — อาจส่งข้อความโดยไม่มีคนเฝ้า"
+                            } else {
+                                "ปิดอยู่ — ระบบจะแนะนำแต่ไม่ตั้งเวลาให้เอง"
+                            },
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                    Switch(
+                        checked = state.autoEnableEnabled,
+                        onCheckedChange = onToggleAutoEnable
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+                val run = state.lastTrainingRun
+                if (run.hasRun) {
+                    HorizontalDivider()
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "รอบล่าสุด: ${formatTimestamp(run.timestampMillis)}",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Text(
+                        text = "พบรูปแบบ ${run.patternsFound} รายการ • " +
+                            "ตั้งเวลาให้อัตโนมัติ ${run.autoEnabled} รายการ",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Text(
+                        text = "คะแนนจากโมเดล (mean activation): " +
+                            "%.4f".format(run.meanScore),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.Gray
+                    )
+                } else {
+                    Text(
+                        text = "ยังไม่เคยรัน — จะเริ่มหลังเครื่องชาร์จและต่อ Wi-Fi",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+                OutlinedButton(
+                    onClick = onRunTrainingNow,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("ฝึกโมเดลเดี๋ยวนี้ (Run Training Now)")
+                }
             }
-        )
+        }
+
+        // App Exclusion Settings
+        AppExclusionSettingsCard()
+
+        // Activity data info
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(text = "ข้อมูลกิจกรรมที่เก็บได้", style = MaterialTheme.typography.titleMedium)
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(text = "สลับแอป: บันทึกแล้ว ${state.logCount} เหตุการณ์")
+                Text(text = "การใช้งานในแอป: ${state.actionCount} การกระทำ")
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "ระบบบันทึกการสลับแอป (1 ครั้ง/ชั่วโมง/วัน) และการคลิก/พิมพ์ข้อความในแอป",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+        }
+
+        // Version badge
+        Surface(
+            color = MaterialTheme.colorScheme.primaryContainer,
+            shape = MaterialTheme.shapes.small
+        ) {
+            Text(
+                text = APP_VERSION_LABEL,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+            )
+        }
     }
 }
+
+// ── Visual Step Editor Dialog ──────────────────────────────────────────────
+
+@Composable
+private fun StepEditorDialog(
+    workflow: AutomationWorkflow,
+    onDismiss: () -> Unit,
+    onSave: (List<String>) -> Unit
+) {
+    val currentSteps = WorkflowRepository.stepsFor(workflow)
+    var steps by remember { mutableStateOf(currentSteps.toMutableList()) }
+    var newStepText by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Visual Step Editor") },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 400.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                Text(
+                    text = "Edit steps for ${workflow.targetApp}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.Gray
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+
+                if (steps.isEmpty()) {
+                    Text(
+                        text = "No steps defined (legacy mode)",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.Gray
+                    )
+                }
+
+                steps.forEachIndexed { index, step ->
+                    StepEditorRow(
+                        step = step,
+                        index = index,
+                        onMoveUp = {
+                            if (index > 0) {
+                                val mutable = steps.toMutableList()
+                                val item = mutable.removeAt(index)
+                                mutable.add(index - 1, item)
+                                steps = mutable
+                            }
+                        },
+                        onMoveDown = {
+                            if (index < steps.size - 1) {
+                                val mutable = steps.toMutableList()
+                                val item = mutable.removeAt(index)
+                                mutable.add(index + 1, item)
+                                steps = mutable
+                            }
+                        },
+                        onDelete = {
+                            val mutable = steps.toMutableList()
+                            mutable.removeAt(index)
+                            steps = mutable
+                        },
+                        onUpdate = { updated ->
+                            val mutable = steps.toMutableList()
+                            mutable[index] = updated
+                            steps = mutable
+                        }
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Add new step
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedTextField(
+                        value = newStepText,
+                        onValueChange = { newStepText = it },
+                        label = { Text("New step") },
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(
+                        onClick = {
+                            if (newStepText.isNotBlank()) {
+                                val mutable = steps.toMutableList()
+                                mutable.add(newStepText.trim())
+                                steps = mutable
+                                newStepText = ""
+                            }
+                        }
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = "Add step")
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onSave(steps) }) {
+                Text("Save & Lock")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
+}
+
+@Composable
+private fun StepEditorRow(
+    step: String,
+    index: Int,
+    onMoveUp: () -> Unit,
+    onMoveDown: () -> Unit,
+    onDelete: () -> Unit,
+    onUpdate: (String) -> Unit
+) {
+    var editing by remember { mutableStateOf(false) }
+    var editText by remember { mutableStateOf(step) }
+
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        shape = MaterialTheme.shapes.small,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.padding(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "${index + 1}.",
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.width(24.dp)
+            )
+
+            if (editing) {
+                OutlinedTextField(
+                    value = editText,
+                    onValueChange = { editText = it },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true
+                )
+                TextButton(onClick = {
+                    onUpdate(editText)
+                    editing = false
+                }) { Text("OK") }
+            } else {
+                Text(
+                    text = step,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.weight(1f)
+                )
+                TextButton(onClick = {
+                    editText = step
+                    editing = true
+                }) { Text("Edit") }
+            }
+
+            IconButton(onClick = onMoveUp, enabled = index > 0) {
+                Icon(
+                    Icons.Default.ArrowUpward,
+                    contentDescription = "Move up",
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+            IconButton(onClick = onMoveDown) {
+                Icon(
+                    Icons.Default.ArrowDownward,
+                    contentDescription = "Move down",
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+            IconButton(onClick = onDelete) {
+                Icon(
+                    Icons.Default.Delete,
+                    contentDescription = "Delete",
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+        }
+    }
+}
+
+// ── Edit Dialog ────────────────────────────────────────────────────────────
 
 @Composable
 private fun WorkflowEditDialog(
@@ -726,6 +1095,8 @@ private fun WorkflowEditDialog(
         }
     )
 }
+
+// ── App Exclusion Settings ─────────────────────────────────────────────────
 
 @Composable
 private fun AppExclusionSettingsCard() {
@@ -815,75 +1186,14 @@ private fun AppExclusionSettingsCard() {
     }
 }
 
-@Composable
-private fun WorkflowRow(
-    workflow: AutomationWorkflow,
-    onToggle: (Boolean) -> Unit,
-    onTestTrigger: () -> Unit,
-    onEdit: () -> Unit,
-    onDelete: () -> Unit
-) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                AppIdentity(packageName = workflow.targetApp)
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = "ทุกวัน ${"%02d".format(workflow.scheduledHour)}:" +
-                        "%02d".format(workflow.scheduledMinute) + " น.",
-                    style = MaterialTheme.typography.bodySmall
-                )
-            }
-            Switch(
-                checked = workflow.isActive,
-                onCheckedChange = onToggle
-            )
-        }
+// ── Utility ────────────────────────────────────────────────────────────────
 
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(
-            text = "ข้อความ: ${WorkflowRepository.messageOf(workflow)}",
-            style = MaterialTheme.typography.bodySmall,
-            color = Color.Gray
-        )
-        Spacer(modifier = Modifier.height(4.dp))
-        if (workflow.isLocked) {
-            Surface(
-                color = MaterialTheme.colorScheme.tertiaryContainer,
-                shape = MaterialTheme.shapes.extraSmall
-            ) {
-                Text(
-                    text = "🔒 Locked / Long-Term Memory",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onTertiaryContainer,
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                )
-            }
-        }
-        Spacer(modifier = Modifier.height(8.dp))
-        OutlinedButton(
-            onClick = onTestTrigger,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Test Trigger Now")
-        }
-        Spacer(modifier = Modifier.height(4.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(
-                onClick = onEdit,
-                modifier = Modifier.weight(1f)
-            ) {
-                Text("Edit")
-            }
-            OutlinedButton(
-                onClick = onDelete,
-                modifier = Modifier.weight(1f)
-            ) {
-                Text("Delete")
-            }
-        }
-    }
+/** Minimal local formatter; avoids pulling in a date library for one label. */
+private fun formatTimestamp(millis: Long): String {
+    val calendar = java.util.Calendar.getInstance().apply { timeInMillis = millis }
+    val day = calendar.get(java.util.Calendar.DAY_OF_MONTH)
+    val month = calendar.get(java.util.Calendar.MONTH) + 1
+    val hour = calendar.get(java.util.Calendar.HOUR_OF_DAY)
+    val minute = calendar.get(java.util.Calendar.MINUTE)
+    return "%02d/%02d %02d:%02d น.".format(day, month, hour, minute)
 }
