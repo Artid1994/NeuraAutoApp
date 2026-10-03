@@ -11,6 +11,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.neuraauto.service.FloatingRecorderService
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -40,6 +41,9 @@ class MainActivity : ComponentActivity() {
                             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
                         },
                         onRefreshTrainingSummary = viewModel::refreshTrainingSummary,
+                        onRecordNewRoutine = {
+                            FloatingRecorderService.start(this@MainActivity)
+                        },
                         viewModel = viewModel
                     )
                 }

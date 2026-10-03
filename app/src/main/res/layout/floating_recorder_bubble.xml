@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Phase 7.0 — Floating recorder bubble overlay.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="@android:color/white"
+    android:elevation="8dp"
+    android:padding="8dp"
+    android:gravity="center">
+
+    <TextView
+        android:id="@+id/tvRecorderStatus"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Ready to Record"
+        android:textSize="12sp"
+        android:textColor="@android:color/black"
+        android:paddingBottom="4dp" />
+
+    <Button
+        android:id="@+id/btnRecord"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="🔴 Record"
+        android:textSize="14sp" />
+
+    <Button
+        android:id="@+id/btnStop"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="⏹️ Stop &amp; Save"
+        android:textSize="14sp"
+        android:visibility="gone" />
+
+</LinearLayout>

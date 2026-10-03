@@ -43,6 +43,31 @@ class AutomationAccessibility : AccessibilityService() {
         @Volatile
         var pendingAction: AutomationAction? = null
 
+        // ── Phase 7.0: Recording mode ──────────────────────────────────────
+
+        /**
+         * Whether the floating recorder is currently capturing interactions.
+         *
+         * When true, [captureInteraction] maps each event to a [SemanticIntent]
+         * and appends it to [capturedSemanticIntents] instead of (or in
+         * addition to) the normal in-app action log.
+         */
+        @Volatile
+        var isRecording: Boolean = false
+
+        /**
+         * Semantic intent targets captured during the current recording session.
+         *
+         * Cleared when recording starts; read by [FloatingRecorderService] when
+         * the user stops and saves.
+         */
+        val capturedSemanticIntents: MutableList<SemanticIntent> = mutableListOf()
+
+        /** Current step cursor, exposed for the replay progress overlay. */
+        @Volatile
+        var stepCursor: Int = 0
+            private set
+
         private const val TAG = "AutomationAccessibility"
         private const val LINE_PACKAGE = "com.linecorp.line"
         private const val SYSTEM_UI_PACKAGE = "com.android.systemui"
@@ -241,6 +266,9 @@ class AutomationAccessibility : AccessibilityService() {
         stepRetries = 0
         Log.d(TAG, "Step $kind done (${stepCursor}/${action.steps.size})")
 
+        // Notify the replay progress overlay
+        instance?.updateStepCursor(stepCursor)
+
         if (stepCursor >= action.steps.size) {
             Log.i(
                 TAG,
@@ -429,6 +457,11 @@ class AutomationAccessibility : AccessibilityService() {
         nextStepAllowedAt = 0L
     }
 
+    /** Update the step cursor (called by the replay progress overlay). */
+    fun updateStepCursor(cursor: Int) {
+        stepCursor = cursor
+    }
+
     // ── Phase 3.1: in-app interaction capture ────────────────────────────────
 
     /**
@@ -470,6 +503,37 @@ class AutomationAccessibility : AccessibilityService() {
             }
         } else {
             null
+        }
+
+        // ── Phase 7.0: Recording mode ──────────────────────────────────────
+        // When the floating recorder is active, map each interaction to a
+        // SemanticIntent target and append it to the capture list.
+        if (isRecording) {
+            val node = source
+            val isEditable = node?.isEditable ?: false
+            val isClickable = node?.isClickable ?: false
+            val text = node?.text?.toString()
+            val contentDesc = node?.contentDescription?.toString()
+
+            // Compute center coordinates from the node's bounds
+            val bounds = android.graphics.Rect()
+            node?.getBoundsInScreen(bounds)
+            val centerX = bounds.centerX()
+            val centerY = bounds.centerY()
+
+            val semanticIntent = SemanticIntent.classify(
+                viewId = viewId,
+                text = text,
+                contentDescription = contentDesc,
+                isEditable = isEditable,
+                isClickable = isClickable,
+                centerX = centerX,
+                centerY = centerY,
+                eventType = eventType
+            )
+
+            capturedSemanticIntents.add(semanticIntent)
+            Log.i(TAG, "Captured ${semanticIntent.label} for $packageName at ($centerX, $centerY)")
         }
 
         InAppActionRecorder.record(

@@ -12,6 +12,7 @@ import android.os.Build
 import android.provider.Settings
 import android.util.Log
 import com.example.neuraauto.safety.SafetyEngine
+import com.example.neuraauto.ui.ReplayProgressActivity
 
 /**
  * Outcome of a launch attempt, carrying a message suitable for display in the
@@ -127,6 +128,17 @@ object WorkflowRunner {
             if (action.actionType == AutomationAction.ACTION_SEND_MESSAGE) {
                 AutomationAccessibility.pendingAction =
                     action.copy(targetPackage = packageName)
+
+                // Phase 7.0: Show step-by-step visual progress overlay
+                if (action.steps.isNotEmpty()) {
+                    ReplayProgressActivity.start(
+                        context = context,
+                        targetPackage = packageName,
+                        actionType = action.actionType,
+                        message = action.message,
+                        steps = action.steps
+                    )
+                }
             }
 
             LaunchOutcome.Launched(

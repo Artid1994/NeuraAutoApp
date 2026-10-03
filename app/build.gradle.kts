@@ -13,7 +13,7 @@ android {
         minSdk = 26
         targetSdk = 35
         versionCode = 17
-        versionName = "6.2.0-thai-intent"
+        versionName = "7.0.0-record-replay"
     }
 
     buildTypes {

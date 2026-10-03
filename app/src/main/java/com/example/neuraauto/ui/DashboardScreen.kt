@@ -50,6 +50,7 @@ import com.example.neuraauto.data.AppExclusionManager
 import com.example.neuraauto.data.AutomationSettings
 import com.example.neuraauto.data.AutomationWorkflow
 import com.example.neuraauto.data.WorkflowRepository
+import com.example.neuraauto.service.FloatingRecorderService
 import com.example.neuraauto.voice.IntentType
 import com.example.neuraauto.voice.ParsedIntent
 import com.example.neuraauto.voice.ThaiIntentParser
@@ -178,13 +179,12 @@ private fun AppIdentity(packageName: String, modifier: Modifier = Modifier) {
 fun DashboardScreen(
     onOpenAccessibilitySettings: () -> Unit,
     onRefreshTrainingSummary: () -> Unit = {},
+    onRecordNewRoutine: () -> Unit = {},
     viewModel: DashboardViewModel = viewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val pagerState = rememberPagerState(pageCount = { 4 })
     val coroutineScope = rememberCoroutineScope()
-    var showAddWorkflowDialog by remember { mutableStateOf(false) }
-
     val tabs = listOf("Dashboard", "Workflows", "Learned AI", "Settings")
     val tabIcons = listOf(
         Icons.Default.Home,
@@ -220,12 +220,12 @@ fun DashboardScreen(
             when (page) {
                 0 -> DashboardTab(
                     state = state,
-                    onAddWorkflow = { showAddWorkflowDialog = true },
                     onTestTrigger = viewModel::testTrigger,
                     onAnalyze = viewModel::analyze,
                     onParseVoiceIntent = viewModel::parseVoiceInput,
                     onExecuteVoiceIntent = viewModel::executeVoiceIntent,
-                    onClearVoiceResult = viewModel::clearVoiceResult
+                    onClearVoiceResult = viewModel::clearVoiceResult,
+                    onRecordNewRoutine = onRecordNewRoutine
                 )
                 1 -> WorkflowsTab(
                     state = state,
@@ -266,16 +266,6 @@ fun DashboardScreen(
         }
     }
 
-    // Add Workflow dialog
-    if (showAddWorkflowDialog) {
-        AddWorkflowDialog(
-            onDismiss = { showAddWorkflowDialog = false },
-            onSave = { workflow ->
-                viewModel.addWorkflow(workflow)
-                showAddWorkflowDialog = false
-            }
-        )
-    }
 }
 
 // ── Tab 0: Dashboard (Home) ────────────────────────────────────────────────
@@ -283,12 +273,12 @@ fun DashboardScreen(
 @Composable
 private fun DashboardTab(
     state: DashboardUiState,
-    onAddWorkflow: () -> Unit,
     onTestTrigger: (AutomationWorkflow) -> Unit,
     onAnalyze: () -> Unit,
     onParseVoiceIntent: (String) -> Unit,
     onExecuteVoiceIntent: () -> Unit,
-    onClearVoiceResult: () -> Unit
+    onClearVoiceResult: () -> Unit,
+    onRecordNewRoutine: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -343,13 +333,15 @@ private fun DashboardTab(
                 )
                 Spacer(modifier = Modifier.height(8.dp))
 
+                // Phase 7.0: Record New Routine button
                 Button(
-                    onClick = onAddWorkflow,
-                    modifier = Modifier.fillMaxWidth()
+                    onClick = onRecordNewRoutine,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error
+                    )
                 ) {
-                    Icon(Icons.Default.Add, contentDescription = null)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("+ Add Workflow")
+                    Text("🔴 Record New Routine")
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))
@@ -620,117 +612,6 @@ private fun StatCard(label: String, value: String, modifier: Modifier = Modifier
             )
         }
     }
-}
-
-// ── Add Workflow Dialog ────────────────────────────────────────────────────
-
-@Composable
-private fun AddWorkflowDialog(
-    onDismiss: () -> Unit,
-    onSave: (AutomationWorkflow) -> Unit
-) {
-    var packageName by remember { mutableStateOf("") }
-    var hour by remember { mutableStateOf("12") }
-    var minute by remember { mutableStateOf("00") }
-    var message by remember { mutableStateOf("") }
-    var stepsText by remember { mutableStateOf("") }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("+ Add Workflow") },
-        text = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text(
-                    text = "สร้าง workflow ใหม่ — ระบบจะเรียนรู้และเสริมสร้าง pattern weights ทุกครั้งที่ execute",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color.Gray
-                )
-
-                OutlinedTextField(
-                    value = packageName,
-                    onValueChange = { packageName = it },
-                    label = { Text("Package Name (e.g. com.linecorp.line)") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    OutlinedTextField(
-                        value = hour,
-                        onValueChange = { hour = it.filter { c -> c.isDigit() }.take(2) },
-                        label = { Text("Hour") },
-                        modifier = Modifier.weight(1f),
-                        singleLine = true
-                    )
-                    OutlinedTextField(
-                        value = minute,
-                        onValueChange = { minute = it.filter { c -> c.isDigit() }.take(2) },
-                        label = { Text("Minute") },
-                        modifier = Modifier.weight(1f),
-                        singleLine = true
-                    )
-                }
-
-                OutlinedTextField(
-                    value = message,
-                    onValueChange = { message = it },
-                    label = { Text("Message") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-
-                OutlinedTextField(
-                    value = stepsText,
-                    onValueChange = { stepsText = it },
-                    label = { Text("Steps (comma-separated, optional)") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = {
-                    val pkg = packageName.trim()
-                    if (pkg.isNotEmpty()) {
-                        val h = hour.toIntOrNull()?.coerceIn(0, 23) ?: 12
-                        val m = minute.toIntOrNull()?.coerceIn(0, 59) ?: 0
-                        val steps = stepsText.split(",")
-                            .map { it.trim() }
-                            .filter { it.isNotEmpty() }
-                        val encodedMessage = WorkflowRepository.encodeMessage(
-                            message = message.ifEmpty { "NeuraAuto AI automated message" },
-                            steps = steps
-                        )
-                        onSave(
-                            AutomationWorkflow(
-                                targetApp = pkg,
-                                scheduledHour = h,
-                                scheduledMinute = m,
-                                targetMessage = encodedMessage,
-                                isActive = true,
-                                isLocked = true
-                            )
-                        )
-                    }
-                },
-                enabled = packageName.trim().isNotEmpty()
-            ) {
-                Text("Save")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
-        }
-    )
 }
 
 // ── Tab 1: Workflows ───────────────────────────────────────────────────────
