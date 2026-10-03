@@ -1,28 +1,42 @@
 package com.example.neuraauto.ui
 
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.graphics.drawable.toBitmap
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -35,6 +49,7 @@ import com.example.neuraauto.data.AppExclusionManager
 import com.example.neuraauto.data.AutomationSettings
 import com.example.neuraauto.data.AutomationWorkflow
 import com.example.neuraauto.data.WorkflowRepository
+import kotlinx.coroutines.launch
 
 /**
  * Shown in the header so a build's phase is obvious at a glance.
@@ -43,7 +58,7 @@ import com.example.neuraauto.data.WorkflowRepository
  * leave the badge stale.
  */
 val APP_VERSION_LABEL: String =
-    "NeuraAuto AI v${BuildConfig.VERSION_NAME} (Phase 5.0: Smart Editor)"
+    "NeuraAuto AI v${BuildConfig.VERSION_NAME} (Phase 6.1: Swipe Tabs)"
 
 // ── Badge helpers ──────────────────────────────────────────────────────────
 
@@ -161,61 +176,393 @@ fun DashboardScreen(
     viewModel: DashboardViewModel = viewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    var selectedTab by remember { mutableStateOf(0) }
+    val pagerState = rememberPagerState(pageCount = { 4 })
+    val coroutineScope = rememberCoroutineScope()
+    var showAddWorkflowDialog by remember { mutableStateOf(false) }
 
-    val tabs = listOf("Workflows", "Learned AI", "Settings")
+    val tabs = listOf("Dashboard", "Workflows", "Learned AI", "Settings")
+    val tabIcons = listOf(
+        Icons.Default.Home,
+        Icons.Default.List,
+        Icons.Default.Star,
+        Icons.Default.Settings
+    )
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        // Tab Row
-        TabRow(selectedTabIndex = selectedTab) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding())
+    ) {
+        // Tab Row — synced with HorizontalPager
+        TabRow(selectedTabIndex = pagerState.currentPage) {
             tabs.forEachIndexed { index, title ->
                 Tab(
-                    selected = selectedTab == index,
-                    onClick = { selectedTab = index },
-                    text = { Text(title) }
+                    selected = pagerState.currentPage == index,
+                    onClick = {
+                        coroutineScope.launch { pagerState.animateScrollToPage(index) }
+                    },
+                    text = { Text(title) },
+                    icon = { Icon(tabIcons[index], contentDescription = title) }
                 )
             }
         }
 
-        // Tab content
-        when (selectedTab) {
-            0 -> WorkflowsTab(
-                state = state,
-                onToggle = { workflow, active ->
-                    if (active) {
-                        viewModel.enableExistingWorkflow(workflow)
-                    } else {
-                        viewModel.disableWorkflow(workflow)
+        // Swipeable tab content
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.fillMaxSize()
+        ) { page ->
+            when (page) {
+                0 -> DashboardTab(
+                    state = state,
+                    onAddWorkflow = { showAddWorkflowDialog = true },
+                    onTestTrigger = viewModel::testTrigger,
+                    onAnalyze = viewModel::analyze
+                )
+                1 -> WorkflowsTab(
+                    state = state,
+                    onToggle = { workflow, active ->
+                        if (active) {
+                            viewModel.enableExistingWorkflow(workflow)
+                        } else {
+                            viewModel.disableWorkflow(workflow)
+                        }
+                    },
+                    onTestTrigger = viewModel::testTrigger,
+                    onDismissTestResult = viewModel::clearTestResult,
+                    onEdit = viewModel::updateWorkflow,
+                    onDelete = viewModel::deleteWorkflow,
+                    onEditSteps = { workflow, steps ->
+                        viewModel.saveCorrectedSteps(workflow, steps)
                     }
-                },
-                onTestTrigger = viewModel::testTrigger,
-                onDismissTestResult = viewModel::clearTestResult,
-                onEdit = viewModel::updateWorkflow,
-                onDelete = viewModel::deleteWorkflow,
-                onEditSteps = { workflow, steps ->
-                    viewModel.saveCorrectedSteps(workflow, steps)
+                )
+                2 -> LearnedAiTab(
+                    state = state,
+                    onAnalyze = viewModel::analyze,
+                    onEnable = viewModel::enableWorkflow,
+                    onDisable = viewModel::disableWorkflow,
+                    onVerify = viewModel::verifyWorkflow,
+                    onReject = viewModel::rejectWorkflow,
+                    onEnableSequence = viewModel::enableSequenceWorkflow
+                )
+                3 -> SettingsTab(
+                    state = state,
+                    onToggleAutoEnable = viewModel::setAutoEnableEnabled,
+                    onRunTrainingNow = {
+                        viewModel.runTrainingNow()
+                        onRefreshTrainingSummary()
+                    },
+                    onOpenAccessibilitySettings = onOpenAccessibilitySettings
+                )
+            }
+        }
+    }
+
+    // Add Workflow dialog
+    if (showAddWorkflowDialog) {
+        AddWorkflowDialog(
+            onDismiss = { showAddWorkflowDialog = false },
+            onSave = { workflow ->
+                viewModel.addWorkflow(workflow)
+                showAddWorkflowDialog = false
+            }
+        )
+    }
+}
+
+// ── Tab 0: Dashboard (Home) ────────────────────────────────────────────────
+
+@Composable
+private fun DashboardTab(
+    state: DashboardUiState,
+    onAddWorkflow: () -> Unit,
+    onTestTrigger: (AutomationWorkflow) -> Unit,
+    onAnalyze: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        // Welcome header
+        Text(
+            text = "NeuraAuto AI",
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Bold
+        )
+        Text(
+            text = "ระบบอัตโนมัติอัจฉริยะที่เรียนรู้จากพฤติกรรมของคุณ",
+            style = MaterialTheme.typography.bodyMedium,
+            color = Color.Gray
+        )
+
+        Spacer(modifier = Modifier.height(4.dp))
+
+        // Stats row
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            StatCard(
+                label = "Workflows",
+                value = "${state.workflows.size}",
+                modifier = Modifier.weight(1f)
+            )
+            StatCard(
+                label = "Active",
+                value = "${state.activeWorkflows.size}",
+                modifier = Modifier.weight(1f)
+            )
+            StatCard(
+                label = "Logs",
+                value = "${state.logCount}",
+                modifier = Modifier.weight(1f)
+            )
+        }
+
+        // Quick actions
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(
+                    text = "Quick Actions",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Button(
+                    onClick = onAddWorkflow,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("+ Add Workflow")
                 }
-            )
-            1 -> LearnedAiTab(
-                state = state,
-                onAnalyze = viewModel::analyze,
-                onEnable = viewModel::enableWorkflow,
-                onDisable = viewModel::disableWorkflow,
-                onVerify = viewModel::verifyWorkflow,
-                onReject = viewModel::rejectWorkflow,
-                onEnableSequence = viewModel::enableSequenceWorkflow
-            )
-            2 -> SettingsTab(
-                state = state,
-                onToggleAutoEnable = viewModel::setAutoEnableEnabled,
-                onRunTrainingNow = {
-                    viewModel.runTrainingNow()
-                    onRefreshTrainingSummary()
-                },
-                onOpenAccessibilitySettings = onOpenAccessibilitySettings
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                OutlinedButton(
+                    onClick = onAnalyze,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("วิเคราะห์พฤติกรรม (Analyze)")
+                }
+            }
+        }
+
+        // Active workflows quick view
+        if (state.activeWorkflows.isNotEmpty()) {
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "Active Workflows",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    state.activeWorkflows.take(3).forEach { workflow ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = workflow.targetApp,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    text = "${"%02d".format(workflow.scheduledHour)}:${"%02d".format(workflow.scheduledMinute)} น.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Color.Gray
+                                )
+                            }
+                            TextButton(onClick = { onTestTrigger(workflow) }) {
+                                Text("Test")
+                            }
+                        }
+                        HorizontalDivider()
+                    }
+
+                    if (state.activeWorkflows.size > 3) {
+                        Text(
+                            text = "และอีก ${state.activeWorkflows.size - 3} รายการ...",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.Gray,
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
+                    }
+                }
+            }
+        }
+
+        // Test result
+        state.testResult?.let { message ->
+            Surface(
+                color = MaterialTheme.colorScheme.secondaryContainer,
+                shape = MaterialTheme.shapes.small,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = message,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(12.dp)
+                )
+            }
+        }
+
+        // Version badge
+        Surface(
+            color = MaterialTheme.colorScheme.primaryContainer,
+            shape = MaterialTheme.shapes.small
+        ) {
+            Text(
+                text = APP_VERSION_LABEL,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
             )
         }
     }
+}
+
+@Composable
+private fun StatCard(label: String, value: String, modifier: Modifier = Modifier) {
+    Card(modifier = modifier) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = value,
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                color = Color.Gray
+            )
+        }
+    }
+}
+
+// ── Add Workflow Dialog ────────────────────────────────────────────────────
+
+@Composable
+private fun AddWorkflowDialog(
+    onDismiss: () -> Unit,
+    onSave: (AutomationWorkflow) -> Unit
+) {
+    var packageName by remember { mutableStateOf("") }
+    var hour by remember { mutableStateOf("12") }
+    var minute by remember { mutableStateOf("00") }
+    var message by remember { mutableStateOf("") }
+    var stepsText by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("+ Add Workflow") },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = "สร้าง workflow ใหม่ — ระบบจะเรียนรู้และเสริมสร้าง pattern weights ทุกครั้งที่ execute",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.Gray
+                )
+
+                OutlinedTextField(
+                    value = packageName,
+                    onValueChange = { packageName = it },
+                    label = { Text("Package Name (e.g. com.linecorp.line)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedTextField(
+                        value = hour,
+                        onValueChange = { hour = it.filter { c -> c.isDigit() }.take(2) },
+                        label = { Text("Hour") },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true
+                    )
+                    OutlinedTextField(
+                        value = minute,
+                        onValueChange = { minute = it.filter { c -> c.isDigit() }.take(2) },
+                        label = { Text("Minute") },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true
+                    )
+                }
+
+                OutlinedTextField(
+                    value = message,
+                    onValueChange = { message = it },
+                    label = { Text("Message") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+
+                OutlinedTextField(
+                    value = stepsText,
+                    onValueChange = { stepsText = it },
+                    label = { Text("Steps (comma-separated, optional)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    val pkg = packageName.trim()
+                    if (pkg.isNotEmpty()) {
+                        val h = hour.toIntOrNull()?.coerceIn(0, 23) ?: 12
+                        val m = minute.toIntOrNull()?.coerceIn(0, 59) ?: 0
+                        val steps = stepsText.split(",")
+                            .map { it.trim() }
+                            .filter { it.isNotEmpty() }
+                        val encodedMessage = WorkflowRepository.encodeMessage(
+                            message = message.ifEmpty { "NeuraAuto AI automated message" },
+                            steps = steps
+                        )
+                        onSave(
+                            AutomationWorkflow(
+                                targetApp = pkg,
+                                scheduledHour = h,
+                                scheduledMinute = m,
+                                targetMessage = encodedMessage,
+                                isActive = true,
+                                isLocked = true
+                            )
+                        )
+                    }
+                },
+                enabled = packageName.trim().isNotEmpty()
+            ) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
 }
 
 // ── Tab 1: Workflows ───────────────────────────────────────────────────────

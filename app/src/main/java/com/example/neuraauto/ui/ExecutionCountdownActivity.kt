@@ -14,6 +14,8 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
 import com.example.neuraauto.service.WorkflowScheduler
+import com.example.neuraauto.brain.SparseNeuronLayer
+import com.example.neuraauto.worker.ModelWeightStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -164,6 +166,30 @@ class ExecutionCountdownActivity : Activity() {
     /** Hand the action to the shared dispatch path and close. */
     private fun dispatchNow(action: com.example.neuraauto.service.AutomationAction) {
         com.example.neuraauto.service.WorkflowRunner.dispatch(this, action)
+
+        // Phase 6.1: Reinforcement training after scheduled execution.
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val store = ModelWeightStore(this@ExecutionCountdownActivity)
+                val layer = SparseNeuronLayer(
+                    inputSize = 10,
+                    capacity = SparseNeuronLayer.DEFAULT_CAPACITY
+                )
+                store.load(layer)
+
+                val features = FloatArray(10) { 0.5f }
+                features[0] = 1.0f
+                features[1] = 1.0f
+                features[2] = (action.steps.size / 6f).coerceAtMost(1f)
+                features[7] = 1.0f
+
+                layer.trainStep(features)
+                store.save(layer)
+                Log.i(TAG, "Reinforcement training completed for workflow ${action.workflowId}")
+            } catch (e: Exception) {
+                Log.w(TAG, "Reinforcement training failed", e)
+            }
+        }
     }
 
     /**

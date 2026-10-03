@@ -242,6 +242,9 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
      *
      * Uses [WorkflowRunner] — the same dispatch the alarm path uses — so a
      * successful test genuinely exercises the execution engine.
+     *
+     * Phase 6.1: After dispatch, triggers a SparseNeuronLayer reinforcement
+     * training pass to strengthen pattern weights for this workflow.
      */
     fun testTrigger(workflow: AutomationWorkflow) {
         viewModelScope.launch {
@@ -264,6 +267,75 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 )
             }
             _uiState.value = _uiState.value.copy(testResult = outcome.message)
+
+            // Phase 6.1: Reinforcement training — strengthen pattern weights
+            // every time a workflow is executed (manual test or scheduled).
+            withContext(Dispatchers.IO) {
+                val store = ModelWeightStore(getApplication())
+                val layer = SparseNeuronLayer(
+                    inputSize = 10,
+                    capacity = SparseNeuronLayer.DEFAULT_CAPACITY
+                )
+                store.load(layer)
+
+                val features = FloatArray(10) { 0.5f }
+                features[0] = 1.0f  // Confidence (user-initiated)
+                features[1] = 1.0f  // SupportRatio
+                features[2] = (WorkflowRepository.stepsFor(workflow).size / 6f).coerceAtMost(1f)
+                features[3] = workflow.scheduledHour / 23f
+                features[7] = 1.0f  // UserVerifiedWeight
+
+                layer.trainStep(features)
+                store.save(layer)
+                Log.i(TAG, "Reinforcement training completed for workflow ${workflow.id}")
+            }
+        }
+    }
+
+    /**
+     * Add a new user-created workflow.
+     *
+     * Persists the workflow, schedules its daily alarm, and triggers
+     * reinforcement training on the new pattern.
+     */
+    fun addWorkflow(workflow: AutomationWorkflow) {
+        viewModelScope.launch {
+            try {
+                val stored = WorkflowRepository.save(workflowDao, workflow)
+                withContext(Dispatchers.IO) {
+                    WorkflowScheduler.schedule(getApplication(), stored)
+                }
+
+                // Reinforcement training on the new user-created pattern
+                withContext(Dispatchers.IO) {
+                    val store = ModelWeightStore(getApplication())
+                    val layer = SparseNeuronLayer(
+                        inputSize = 10,
+                        capacity = SparseNeuronLayer.DEFAULT_CAPACITY
+                    )
+                    store.load(layer)
+
+                    val features = FloatArray(10) { 0.5f }
+                    features[0] = 1.0f
+                    features[1] = 1.0f
+                    features[2] = (WorkflowRepository.stepsFor(stored).size / 6f).coerceAtMost(1f)
+                    features[3] = stored.scheduledHour / 23f
+                    features[7] = 1.0f
+
+                    layer.trainStep(features)
+                    store.save(layer)
+                }
+
+                _uiState.value = _uiState.value.copy(
+                    testResult = "Workflow created and scheduled for ${"%02d".format(stored.scheduledHour)}:${"%02d".format(stored.scheduledMinute)} น."
+                )
+                Log.i(TAG, "Added workflow ${stored.id} for ${stored.targetApp}")
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to add workflow", e)
+                _uiState.value = _uiState.value.copy(
+                    testResult = "Failed to add workflow: ${e.javaClass.simpleName}"
+                )
+            }
         }
     }
 
