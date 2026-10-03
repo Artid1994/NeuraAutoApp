@@ -1,5 +1,6 @@
 package com.example.neuraauto.ui
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -169,6 +170,7 @@ private fun AppIdentity(packageName: String, modifier: Modifier = Modifier) {
 
 // ── Main Screen ────────────────────────────────────────────────────────────
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun DashboardScreen(
     onOpenAccessibilitySettings: () -> Unit,
